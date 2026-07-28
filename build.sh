@@ -53,13 +53,29 @@ clone_kernel() {
     if [ ! -d $KERNEL_SOURCE ]; then
         git clone --depth=1 -b $KERNEL_BRANCH $KERNEL_REPO $KERNEL_SOURCE
         cd $KERNEL_SOURCE
-        # Init KernelSU-Next submodule for KSU version detection
-        git submodule init
-        git submodule update --depth=1
+        # Remove stale KernelSU-Next submodule (commit fc33995 doesn't exist upstream)
+        rm -rf KernelSU-Next
+        git config --unset-all submodule.KernelSU-Next.url 2>/dev/null || true
+        # Clone KernelSU-Next v3.3.0 directly
+        echo "=== Cloning KernelSU-Next v3.3.0 ==="
+        git clone --depth=1 --branch v3.3.0 \
+            https://github.com/KernelSU-Next/KernelSU-Next.git \
+            KernelSU-Next
         if [ ! -f KernelSU-Next/kernel/Kbuild ]; then
-            echo "ERROR: KernelSU-Next submodule failed to checkout!"
+            echo "ERROR: KernelSU-Next failed to checkout!"
             exit 1
         fi
+        # Ensure symlink exists (upstream has it, but verify)
+        if [ ! -L drivers/kernelsu ]; then
+            ln -sf ../KernelSU-Next/kernel drivers/kernelsu
+        fi
+        # Ensure Makefile entry exists
+        grep -q "kernelsu" drivers/Makefile || \
+            printf "\nobj-\$(CONFIG_KSU) += kernelsu/\n" >> drivers/Makefile
+        # Ensure Kconfig entry exists
+        grep -q "drivers/kernelsu/Kconfig" drivers/Kconfig || \
+            sed -i "/endmenu/i\source \"drivers/kernelsu/Kconfig\"" drivers/Kconfig
+        echo "=== KernelSU-Next v3.3.0 ready ==="
         cd $KERNEL
     fi
 }
