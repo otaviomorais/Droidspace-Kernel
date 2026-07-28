@@ -171,17 +171,43 @@ jobs:
             LLVM=1 \
             LLVM_IAS=1
 
+          echo "=== Build dtbo.img ==="
+          make -j$(nproc) \
+            O=out \
+            CC="ccache clang" \
+            HOSTCC=gcc \
+            LD=ld.lld \
+            AS=llvm-as \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            dtbo.img 2>&1 || echo "dtbo.img target not available, skipping"
+
       - name: Package kernel
         id: package
         run: |
-          DTS=kernel_source/arch/arm64/boot/dts/vendor
+          OUT=kernel_source/out
 
-          find "$DTS" -name '*.dtb' -exec cat {} + > AnyKernel/dtb
-          find "$DTS" -name 'Image' -exec cat {} + > AnyKernel/Image
+          cp "$OUT/arch/arm64/boot/Image" AnyKernel/Image
 
-          DTBO_PATH=$(find "$DTS" -name 'dtbo.img' | head -1)
+          DTB_OUT=$(find "$OUT/arch/arm64/boot/dts" -name '*.dtb' 2>/dev/null)
+          if [ -n "$DTB_OUT" ]; then
+            find "$OUT/arch/arm64/boot/dts" -name '*.dtb' -exec cat {} + > AnyKernel/dtb
+            echo "DTBs concatenated: $(wc -c < AnyKernel/dtb) bytes"
+          else
+            echo "Warning: No DTB files found in $OUT/arch/arm64/boot/dts"
+          fi
+
+          DTBO_PATH=$(find "$OUT/arch/arm64/boot" -name 'dtbo.img' | head -1)
           if [ -n "$DTBO_PATH" ]; then
             cp "$DTBO_PATH" AnyKernel/dtbo.img
+            echo "dtbo.img found and copied: $(wc -c < AnyKernel/dtbo.img) bytes"
+          else
+            echo "dtbo.img not found - will not be included in zip"
           fi
 
           cd AnyKernel
