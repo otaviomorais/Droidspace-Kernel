@@ -75,7 +75,11 @@ clone_kernel() {
         # Ensure Kconfig entry exists
         grep -q "drivers/kernelsu/Kconfig" drivers/Kconfig || \
             sed -i "/endmenu/i\source \"drivers/kernelsu/Kconfig\"" drivers/Kconfig
-        echo "=== KernelSU-Next v3.3.0 ready ==="
+        # Patch for kernel 4.19: cpus_allowed renamed to cpus_mask
+        echo "=== Patching KernelSU-Next for kernel 4.19 compat ==="
+        sed -i 's/&current->cpus_allowed);/\&current->cpus_mask);/g' \
+            KernelSU-Next/kernel/selinux/rules.c
+        echo "=== KernelSU-Next v3.2.0-legacy ready ==="
         cd $KERNEL
     fi
 }
