@@ -24,6 +24,17 @@
 #include <linux/uaccess.h>
 #include <linux/compat.h>
 
+/*
+ * Compat: lockdep_assert and LOCK_STATE_NOT_HELD were added in Linux 4.13/4.15.
+ * Some 4.19 CAF kernels lack them. Provide fallbacks.
+ */
+#ifndef lockdep_assert
+#define lockdep_assert(cond) do { } while (0)
+#endif
+#ifndef LOCK_STATE_NOT_HELD
+#define LOCK_STATE_NOT_HELD 0
+#endif
+
 #define NTSYNC_NAME	"ntsync"
 
 enum ntsync_type {
