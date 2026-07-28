@@ -12,6 +12,9 @@ on:
         required: false
         default: 'Droidspace Kernel for Poco F3 (alioth) with DroidSpaces support'
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-22.04
@@ -227,4 +230,4 @@ jobs:
           files: "*.zip"
           make_latest: true
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.DEPLOY_TOKEN || secrets.GITHUB_TOKEN }}
