@@ -1,0 +1,10 @@
+export VERSION="1.0.0"
+export BUILD=1
+export PREFIX=""
+export DESC="Droidspace Kernel for Poco F3"
+export DEVICE="alioth"
+export TYPE="release"
+export LEVEL=1
+export EXTRA=""
+export SHAB=""
+export SHAK=""

@@ -1,0 +1,181 @@
+name: Build Droidspace Kernel
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Kernel version'
+        required: false
+        default: '1.0.0'
+      description:
+        description: 'Release description'
+        required: false
+        default: 'Droidspace Kernel for Poco F3 (alioth) with DroidSpaces support'
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup environment
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            bc bison flex openssl libelf-dev \
+            python3 python3-pip python3-venv \
+            gcc g++ make automake autoconf \
+            curl git zip unzip \
+            libncurses-dev libssl-dev \
+            p7zip-full ccache \
+            lz4 xz-utils zlib1g-dev
+
+      - name: Setup ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ${{ runner.os }}-kernel-ccache
+          max-size: 10G
+
+      - name: Download Clang toolchain
+        run: |
+          mkdir -p toolchains/clang
+          wget -q -O /tmp/clang.tar.gz \
+            "https://github.com/ZyCromerZ/Clang/releases/download/20.0.0git-20250129-release/Clang-20.0.0git-20250129.tar.gz"
+          tar -zxf /tmp/clang.tar.gz -C toolchains/clang --strip-components=1
+          rm -f /tmp/clang.tar.gz
+          echo "Clang version:"
+          toolchains/clang/bin/clang --version | head -1
+
+      - name: Download GCC toolchains
+        run: |
+          git clone --depth=1 \
+            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 \
+            toolchains/arm-linux-androideabi-4.9
+          git clone --depth=1 \
+            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 \
+            toolchains/aarch64-linux-android-4.9
+
+      - name: Clone kernel source
+        run: |
+          git clone --depth=1 -b magictime-new \
+            https://github.com/TIMISONG-dev/kernel_xiaomi_sm8250.git \
+            kernel_source
+
+      - name: Clone AnyKernel
+        run: |
+          git clone --depth=1 \
+            https://github.com/TIMISONG-dev/MagicTime-alioth.git \
+            AnyKernel
+
+      - name: Install kernel config
+        run: |
+          cp configs/droidspaces.config \
+            kernel_source/arch/arm64/configs/vendor/xiaomi/droidspaces.config
+
+      - name: Configure kernel
+        run: |
+          export PATH="${{ github.workspace }}/toolchains/clang/bin:${{ github.workspace }}/toolchains/aarch64-linux-android-4.9/bin:${{ github.workspace }}/toolchains/arm-linux-androideabi-4.9/bin:$PATH"
+          export ARCH=arm64
+          export SUBARCH=arm64
+          cd kernel_source
+          make O=out \
+            alioth_defconfig \
+            vendor/xiaomi/magictime-common.config \
+            vendor/xiaomi/droidspaces.config
+
+      - name: Build kernel
+        run: |
+          export PATH="${{ github.workspace }}/toolchains/clang/bin:${{ github.workspace }}/toolchains/aarch64-linux-android-4.9/bin:${{ github.workspace }}/toolchains/arm-linux-androideabi-4.9/bin:$PATH"
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export CC="ccache clang"
+          export HOSTCC=gcc
+          export LD=ld.lld
+          export AS=llvm-as
+          export AR=llvm-ar
+          export NM=llvm-nm
+          export OBJCOPY=llvm-objcopy
+          export OBJDUMP=llvm-objdump
+          export STRIP=llvm-strip
+          export LLVM=1
+          export LLVM_IAS=1
+          export KBUILD_BUILD_USER=Droidspace
+          export KBUILD_BUILD_HOST=github-actions
+          cd kernel_source
+          make -j$(nproc) \
+            O=out \
+            CC="ccache clang" \
+            HOSTCC=gcc \
+            LD=ld.lld \
+            AS=llvm-as \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
+            LLVM=1 \
+            LLVM_IAS=1
+
+      - name: Package kernel
+        id: package
+        run: |
+          DTS=kernel_source/arch/arm64/boot/dts/vendor
+
+          find "$DTS" -name '*.dtb' -exec cat {} + > AnyKernel/dtb
+          find "$DTS" -name 'Image' -exec cat {} + > AnyKernel/Image
+
+          DTBO_PATH=$(find "$DTS" -name 'dtbo.img' | head -1)
+          if [ -n "$DTBO_PATH" ]; then
+            cp "$DTBO_PATH" AnyKernel/dtbo.img
+          fi
+
+          cd AnyKernel
+          rm -f *.zip
+          BUILD_DATE=$(date '+%Y-%m-%d_%H-%M-%S')
+          ZIP_NAME="Droidspace-alioth-v${{ inputs.version || '1.0.0' }}-${BUILD_DATE}.zip"
+          7z a -mx9 "$ZIP_NAME" * -x!*.zip
+          cp "$ZIP_NAME" "${{ github.workspace }}/"
+          echo "zip_name=$ZIP_NAME" >> "$GITHUB_OUTPUT"
+          echo "Package created: $ZIP_NAME"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Droidspace Kernel
+          path: "*.zip"
+          retention-days: 30
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ inputs.version || '1.0.0' }}
+          name: "Droidspace Kernel v${{ inputs.version || '1.0.0' }}"
+          body: |
+            ## Droidspace Kernel v${{ inputs.version || '1.0.0' }}
+
+            **Device:** POCO F3 (alioth)
+            **Base:** MagicTime Kernel (TIMISONG-dev)
+            **Kernel Source:** magictime-new branch
+
+            ### Features
+            - MagicTime optimizations (PELT, uclamp, thermal pressure, CASS scheduler)
+            - KernelSu support
+            - Full DroidSpaces support:
+              - PID/UTS/IPC/NET/User namespaces
+              - Control groups (device, pids, memory, scheduler, freezer, net_prio)
+              - OverlayFS, VETH, Bridge, Netfilter/NAT
+              - Seccomp filtering
+              - TMPFS xattr/posix acl (NixOS support)
+              - ZRAM with LZ4 compression
+              - RCU boost/lazy
+              - TEO CPU idle governor
+              - Westwood TCP congestion
+
+            ${{ inputs.description || 'Droidspace Kernel for Poco F3 (alioth) with DroidSpaces support' }}
+          files: "*.zip"
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
