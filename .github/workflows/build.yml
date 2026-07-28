@@ -99,7 +99,16 @@ jobs:
             https://github.com/TIMISONG-dev/kernel_xiaomi_sm8250.git \
             kernel_source
           cd kernel_source
-          git submodule update --init --depth=1
+          # Init KernelSU-Next submodule with full history for version detection
+          git submodule init
+          git submodule update --depth=1
+          # Verify KernelSU-Next was checked out
+          if [ ! -f KernelSU-Next/kernel/Kbuild ]; then
+            echo "ERROR: KernelSU-Next submodule failed to checkout!"
+            exit 1
+          fi
+          echo "=== KernelSU-Next submodule OK ==="
+          ls -la KernelSU-Next/kernel/
 
       - name: Clone AnyKernel
         run: |
@@ -109,6 +118,7 @@ jobs:
 
       - name: Install kernel config
         run: |
+          mkdir -p kernel_source/arch/arm64/configs/vendor/xiaomi
           cp configs/droidspaces.config \
             kernel_source/arch/arm64/configs/vendor/xiaomi/droidspaces.config
 
@@ -124,10 +134,16 @@ jobs:
           export ARCH=arm64
           export SUBARCH=arm64
           cd kernel_source
-          make O=out \
-            alioth_defconfig \
-            vendor/xiaomi/magictime-common.config \
-            vendor/xiaomi/droidspaces.config
+          # Generate base config
+          make O=out alioth_defconfig
+          # Merge config fragments
+          scripts/kconfig/merge_config.sh -O out \
+            out/.config \
+            arch/arm64/configs/vendor/xiaomi/magictime-common.config \
+            arch/arm64/configs/vendor/xiaomi/droidspaces.config
+          make O=out olddefconfig
+          # Verify KSU is enabled
+          grep -q "CONFIG_KSU=y" out/.config && echo "KSU enabled: YES" || echo "WARNING: KSU not enabled!"
 
       - name: Build kernel
         run: |

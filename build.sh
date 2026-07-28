@@ -52,6 +52,15 @@ clone_kernel() {
     echo "=== Cloning kernel source ==="
     if [ ! -d $KERNEL_SOURCE ]; then
         git clone --depth=1 -b $KERNEL_BRANCH $KERNEL_REPO $KERNEL_SOURCE
+        cd $KERNEL_SOURCE
+        # Init KernelSU-Next submodule for KSU version detection
+        git submodule init
+        git submodule update --depth=1
+        if [ ! -f KernelSU-Next/kernel/Kbuild ]; then
+            echo "ERROR: KernelSU-Next submodule failed to checkout!"
+            exit 1
+        fi
+        cd $KERNEL
     fi
 }
 
@@ -88,10 +97,19 @@ build() {
     OUT=out
 
     echo "=== Copying DroidSpaces config ==="
+    mkdir -p arch/arm64/configs/vendor/xiaomi
     cp $KERNEL/configs/droidspaces.config arch/arm64/configs/vendor/xiaomi/droidspaces.config
 
     echo "=== Configuring kernel ==="
-    make O="$OUT" ${DEVICE}_defconfig vendor/xiaomi/magictime-common.config vendor/xiaomi/droidspaces.config 2>&1 | tee ../build_config.log
+    make O="$OUT" ${DEVICE}_defconfig 2>&1 | tee ../build_config.log
+    # Merge config fragments properly
+    scripts/kconfig/merge_config.sh -O "$OUT" \
+        "$OUT/.config" \
+        arch/arm64/configs/vendor/xiaomi/magictime-common.config \
+        arch/arm64/configs/vendor/xiaomi/droidspaces.config 2>&1 | tee -a ../build_config.log
+    make O="$OUT" olddefconfig 2>&1 | tee -a ../build_config.log
+    # Verify KSU is enabled
+    grep -q "CONFIG_KSU=y" "$OUT/.config" && echo "KSU enabled: YES" || echo "WARNING: KSU not enabled!"
 
     echo "=== Building kernel ==="
     make -j$(nproc) \
