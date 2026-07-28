@@ -1,6 +1,6 @@
 # Droidspace Kernel
 
-Custom kernel for **POCO F3 (alioth)** based on [MagicTime Kernel](https://github.com/TIMISONG-dev/kernel_xiaomi_sm8250) with full [DroidSpaces](https://github.com/nickcano/droidspaces) support.
+Custom kernel for **POCO F3 (alioth)** based on [MagicTime Kernel](https://github.com/TIMISONG-dev/kernel_xiaomi_sm8250) with full [DroidSpaces](https://github.com/ravindu644/Droidspaces-OSS) support.
 
 ## Features
 
@@ -22,5 +22,7 @@ To build locally:
 ## Credits
 
 - [TIMISONG-dev](https://github.com/TIMISONG-dev) - MagicTime Kernel
-- [ravindu644](https://github.com/nickcano/droidspaces) - DroidSpaces kernel configs
+- [ravindu644](https://github.com/ravindu644) - DroidSpaces kernel configs ([Droidspaces-OSS](https://github.com/ravindu644/Droidspaces-OSS))
 - [ZyCromerZ](https://github.com/ZyCromerZ) - Clang toolchain
+- [LineageOS](https://github.com/LineageOS) - GCC toolchains
+- [KernelSU-Next](https://github.com/KernelSU-Next/KernelSU-Next) - KernelSU
