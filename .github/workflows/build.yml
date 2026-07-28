@@ -102,9 +102,9 @@ jobs:
           # Remove stale KernelSU-Next submodule (commit fc33995 doesn't exist upstream)
           rm -rf KernelSU-Next
           git config --unset-all submodule.KernelSU-Next.url 2>/dev/null || true
-          # Clone KernelSU-Next v3.3.0 directly
-          echo "=== Cloning KernelSU-Next v3.3.0 ==="
-          git clone --depth=1 --branch v3.3.0 \
+          # Clone KernelSU-Next v3.2.0-legacy (v3.3.0 requer APIs 5.10+; SM8250 é 4.19)
+          echo "=== Cloning KernelSU-Next v3.2.0-legacy ==="
+          git clone --depth=1 --branch v3.2.0-legacy \
             https://github.com/KernelSU-Next/KernelSU-Next.git \
             KernelSU-Next
           # Verify KernelSU-Next was checked out
