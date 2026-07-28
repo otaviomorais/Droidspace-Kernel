@@ -46,8 +46,45 @@ jobs:
             "https://github.com/ZyCromerZ/Clang/releases/download/20.0.0git-20250129-release/Clang-20.0.0git-20250129.tar.gz"
           tar -zxf /tmp/clang.tar.gz -C toolchains/clang --strip-components=1
           rm -f /tmp/clang.tar.gz
-          echo "Clang version:"
+          echo "=== Clang version ==="
           toolchains/clang/bin/clang --version | head -1
+          echo "=== Checking for ld.lld ==="
+          if [ ! -f toolchains/clang/bin/ld.lld ]; then
+            echo "ld.lld not found in bin/, searching..."
+            find toolchains/clang -name 'ld.lld' -o -name 'lld' 2>/dev/null || true
+            find toolchains/clang -name 'ld.lld*' 2>/dev/null || true
+            ls toolchains/clang/bin/ | grep -i lld || true
+          fi
+
+      - name: Setup toolchain symlinks
+        run: |
+          CLANG_BIN="${{ github.workspace }}/toolchains/clang/bin"
+          mkdir -p "${{ github.workspace }}/toolchains/bin"
+
+          for tool in clang clang++ ld.lld lld llvm-ar llvm-nm \
+                      llvm-objcopy llvm-objdump llvm-strip llvm-as \
+                      llvm-readelf llvm-ar; do
+            if [ -f "${CLANG_BIN}/${tool}" ]; then
+              ln -sf "${CLANG_BIN}/${tool}" "${{ github.workspace }}/toolchains/bin/${tool}"
+            fi
+          done
+
+          if [ ! -f "${CLANG_BIN}/ld.lld" ]; then
+            echo "Creating ld.lld symlink from lld"
+            if [ -f "${CLANG_BIN}/lld" ]; then
+              ln -sf "${CLANG_BIN}/lld" "${CLANG_BIN}/ld.lld"
+            elif [ -f "${CLANG_BIN}/llvm-lld" ]; then
+              ln -sf "${CLANG_BIN}/llvm-lld" "${CLANG_BIN}/ld.lld"
+            else
+              echo "WARNING: lld not found, trying to find any lld binary"
+              find toolchains/clang -name 'lld*' -type f 2>/dev/null | head -5
+            fi
+          fi
+
+          echo "=== Final toolchain bin contents ==="
+          ls -la "${CLANG_BIN}/" | grep -E 'lld|clang|ar|nm|objcopy|objdump|strip'
+          echo "=== Verify ld.lld ==="
+          "${CLANG_BIN}/ld.lld" --version || echo "ld.lld check failed"
 
       - name: Download GCC toolchains
         run: |
@@ -78,7 +115,8 @@ jobs:
 
       - name: Configure kernel
         run: |
-          export PATH="${{ github.workspace }}/toolchains/clang/bin:${{ github.workspace }}/toolchains/aarch64-linux-android-4.9/bin:${{ github.workspace }}/toolchains/arm-linux-androideabi-4.9/bin:$PATH"
+          export TOOLCHAIN_PATH="${{ github.workspace }}/toolchains/clang/bin:${{ github.workspace }}/toolchains/aarch64-linux-android-4.9/bin:${{ github.workspace }}/toolchains/arm-linux-androideabi-4.9/bin"
+          export PATH="${TOOLCHAIN_PATH}:${{ github.workspace }}/toolchains/bin:$PATH"
           export ARCH=arm64
           export SUBARCH=arm64
           cd kernel_source
@@ -89,7 +127,8 @@ jobs:
 
       - name: Build kernel
         run: |
-          export PATH="${{ github.workspace }}/toolchains/clang/bin:${{ github.workspace }}/toolchains/aarch64-linux-android-4.9/bin:${{ github.workspace }}/toolchains/arm-linux-androideabi-4.9/bin:$PATH"
+          export TOOLCHAIN_PATH="${{ github.workspace }}/toolchains/clang/bin:${{ github.workspace }}/toolchains/aarch64-linux-android-4.9/bin:${{ github.workspace }}/toolchains/arm-linux-androideabi-4.9/bin"
+          export PATH="${TOOLCHAIN_PATH}:${{ github.workspace }}/toolchains/bin:$PATH"
           export ARCH=arm64
           export SUBARCH=arm64
           export CC="ccache clang"
@@ -105,6 +144,10 @@ jobs:
           export LLVM_IAS=1
           export KBUILD_BUILD_USER=Droidspace
           export KBUILD_BUILD_HOST=github-actions
+          echo "=== Verify tools ==="
+          which ld.lld
+          which clang
+          which llvm-ar
           cd kernel_source
           make -j$(nproc) \
             O=out \
