@@ -96,9 +96,10 @@ jobs:
       - name: Clone kernel source
         run: |
           git clone --depth=1 -b magictime-new \
-            --recurse-submodules --shallow-submodules \
             https://github.com/TIMISONG-dev/kernel_xiaomi_sm8250.git \
             kernel_source
+          cd kernel_source
+          git submodule update --init --depth=1
 
       - name: Clone AnyKernel
         run: |
