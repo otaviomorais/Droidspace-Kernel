@@ -84,6 +84,32 @@ clone_kernel() {
     fi
 }
 
+setup_ntsync() {
+    echo "=== Applying ntsync (NT synchronization primitives) ==="
+    cd $KERNEL_SOURCE
+
+    # Copy ntsync driver source
+    cp $KERNEL/patches/ntsync/ntsync.c drivers/misc/
+    echo "  -> drivers/misc/ntsync.c copied"
+
+    # Copy UAPI header
+    cp $KERNEL/patches/ntsync/ntsync.h include/uapi/linux/
+    echo "  -> include/uapi/linux/ntsync.h copied"
+
+    # Add entry to drivers/misc/Makefile
+    grep -q "CONFIG_NTSYNC" drivers/misc/Makefile || \
+        printf "obj-\$(CONFIG_NTSYNC)\t\t+= ntsync.o\n" >> drivers/misc/Makefile
+    echo "  -> drivers/misc/Makefile patched"
+
+    # Add Kconfig entry (before endmenu)
+    grep -q "config NTSYNC" drivers/misc/Kconfig || \
+        sed -i "/endmenu/i\config NTSYNC\n\ttristate \"NT synchronization primitive emulation\"\n\tdefault y\n\thelp\n\t  This module provides kernel support for emulation of Windows NT\n\t  synchronization primitives for Wine/Proton. It is not a hardware driver.\n\t  If unsure, say N.\n" drivers/misc/Kconfig
+    echo "  -> drivers/misc/Kconfig patched"
+
+    echo "=== ntsync ready ==="
+    cd $KERNEL
+}
+
 clone_anykernel() {
     echo "=== Setting up AnyKernel ==="
     if [ ! -d $ANYKERNEL_DIR ]; then
@@ -130,6 +156,8 @@ build() {
     make O="$OUT" olddefconfig 2>&1 | tee -a ../build_config.log
     # Verify KSU is enabled
     grep -q "CONFIG_KSU=y" "$OUT/.config" && echo "KSU enabled: YES" || echo "WARNING: KSU not enabled!"
+    # Verify ntsync is enabled
+    grep -q "CONFIG_NTSYNC=y" "$OUT/.config" && echo "ntsync enabled: YES" || echo "WARNING: ntsync not enabled!"
 
     echo "=== Building kernel ==="
     make -j$(nproc) \
@@ -189,6 +217,7 @@ package() {
 
 setup_toolchains
 clone_kernel
+setup_ntsync
 clone_anykernel
 build
 package

@@ -6,11 +6,11 @@ on:
       version:
         description: 'Kernel version'
         required: false
-        default: '1.0.0'
+        default: '1.1.0'
       description:
         description: 'Release description'
         required: false
-        default: 'Droidspace Kernel for Poco F3 (alioth) with DroidSpaces support'
+        default: 'Droidspace Kernel for Poco F3 (alioth) with DroidSpaces + ntsync support'
 
 permissions:
   contents: write
@@ -128,6 +128,25 @@ jobs:
               KernelSU-Next/kernel/selinux/rules.c
           echo "=== KernelSU-Next v3.2.0-legacy ready ==="
 
+      - name: Setup ntsync
+        run: |
+          cd kernel_source
+          # Copy ntsync driver source
+          cp ${{ github.workspace }}/patches/ntsync/ntsync.c drivers/misc/
+          echo "  -> drivers/misc/ntsync.c copied"
+          # Copy UAPI header
+          cp ${{ github.workspace }}/patches/ntsync/ntsync.h include/uapi/linux/
+          echo "  -> include/uapi/linux/ntsync.h copied"
+          # Add entry to drivers/misc/Makefile
+          grep -q "CONFIG_NTSYNC" drivers/misc/Makefile || \
+            printf "obj-\$(CONFIG_NTSYNC)\t\t+= ntsync.o\n" >> drivers/misc/Makefile
+          echo "  -> drivers/misc/Makefile patched"
+          # Add Kconfig entry
+          grep -q "config NTSYNC" drivers/misc/Kconfig || \
+            sed -i "/endmenu/i\config NTSYNC\n\ttristate \"NT synchronization primitive emulation\"\n\tdefault y\n\thelp\n\t  This module provides kernel support for emulation of Windows NT\n\t  synchronization primitives for Wine/Proton.\n\t  If unsure, say N.\n" drivers/misc/Kconfig
+          echo "  -> drivers/misc/Kconfig patched"
+          echo "=== ntsync ready ==="
+
       - name: Clone AnyKernel
         run: |
           git clone --depth=1 \
@@ -162,6 +181,8 @@ jobs:
           make O=out olddefconfig
           # Verify KSU is enabled
           grep -q "CONFIG_KSU=y" out/.config && echo "KSU enabled: YES" || echo "WARNING: KSU not enabled!"
+          # Verify ntsync is enabled
+          grep -q "CONFIG_NTSYNC=y" out/.config && echo "ntsync enabled: YES" || echo "WARNING: ntsync not enabled!"
 
       - name: Build kernel
         run: |
@@ -286,6 +307,7 @@ jobs:
               - RCU boost/lazy
               - TEO CPU idle governor
               - Westwood TCP congestion
+              - ntsync (NT synchronization primitives for Wine/Proton)
 
             ${{ inputs.description || 'Droidspace Kernel for Poco F3 (alioth) with DroidSpaces support' }}
           files: "*.zip"

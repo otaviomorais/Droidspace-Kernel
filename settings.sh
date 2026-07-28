@@ -1,4 +1,4 @@
-export VERSION="1.0.0"
+export VERSION="1.1.0"
 export BUILD=1
 export PREFIX=""
 export DESC="Droidspace Kernel for Poco F3"
