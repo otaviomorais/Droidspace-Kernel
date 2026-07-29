@@ -137,7 +137,7 @@ build() {
     export STRIP=llvm-strip
     export LLVM=1
     export LLVM_IAS=1
-    export KBUILD_BUILD_USER=Droidspace
+    export KBUILD_BUILD_USER=DroidSpace
     export KBUILD_BUILD_HOST=github-actions
 
     OUT=out
@@ -158,6 +158,17 @@ build() {
     grep -q "CONFIG_KSU=y" "$OUT/.config" && echo "KSU enabled: YES" || echo "WARNING: KSU not enabled!"
     # Verify ntsync is enabled
     grep -q "CONFIG_NTSYNC=y" "$OUT/.config" && echo "ntsync enabled: YES" || echo "WARNING: ntsync not enabled!"
+    # Verify cgroup v2 is enabled
+    grep -q "CONFIG_CGROUP2=y" "$OUT/.config" && echo "cgroup v2: YES" || echo "WARNING: cgroup v2 not enabled!"
+    # Set kernel local version suffix — kernel reports "DroidSpace" in `uname -r`
+    LOCALVERSION="-DroidSpace"
+    scripts/config --file "$OUT/.config" --set-str CONFIG_LOCALVERSION "$LOCALVERSION"
+    if grep -q '^CONFIG_LOCALVERSION="-DroidSpace"$' "$OUT/.config"; then
+        echo "Local version: DroidSpace"
+    else
+        echo "WARNING: Local version not set correctly!"
+        grep "CONFIG_LOCALVERSION" "$OUT/.config" || true
+    fi
 
     echo "=== Building kernel ==="
     make -j$(nproc) \
@@ -173,6 +184,8 @@ build() {
         STRIP=llvm-strip \
         LLVM=1 \
         LLVM_IAS=1 \
+        KBUILD_BUILD_USER="DroidSpace" \
+        KBUILD_BUILD_HOST="github-actions" \
         2>&1 | tee ../build.log
 
     END=$(date +%s)

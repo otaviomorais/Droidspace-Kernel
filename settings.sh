@@ -1,7 +1,7 @@
-export VERSION="1.1.0"
+export VERSION="1.2.0"
 export BUILD=1
 export PREFIX=""
-export DESC="Droidspace Kernel for Poco F3"
+export DESC="DroidSpace Kernel for Poco F3"
 export DEVICE="alioth"
 export TYPE="release"
 export LEVEL=1

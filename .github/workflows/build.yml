@@ -1,4 +1,4 @@
-name: Build Droidspace Kernel
+name: Build DroidSpace Kernel
 
 on:
   workflow_dispatch:
@@ -6,11 +6,11 @@ on:
       version:
         description: 'Kernel version'
         required: false
-        default: '1.1.0'
+        default: '1.2.0'
       description:
         description: 'Release description'
         required: false
-        default: 'Droidspace Kernel for Poco F3 (alioth) with DroidSpaces + ntsync support'
+        default: 'DroidSpace Kernel for Poco F3 (alioth) with DroidSpaces + cgroup v2 + ntsync support'
 
 permissions:
   contents: write
@@ -183,6 +183,16 @@ jobs:
           grep -q "CONFIG_KSU=y" out/.config && echo "KSU enabled: YES" || echo "WARNING: KSU not enabled!"
           # Verify ntsync is enabled
           grep -q "CONFIG_NTSYNC=y" out/.config && echo "ntsync enabled: YES" || echo "WARNING: ntsync not enabled!"
+          # Verify cgroup v2 is enabled
+          grep -q "CONFIG_CGROUP2=y" out/.config && echo "cgroup v2: YES" || echo "WARNING: cgroup v2 not enabled!"
+          # Set kernel local version suffix
+          scripts/config --file out/.config --set-str CONFIG_LOCALVERSION "-DroidSpace"
+          if grep -q '^CONFIG_LOCALVERSION="-DroidSpace"$' out/.config; then
+              echo "Local version: DroidSpace"
+          else
+              echo "WARNING: Local version not set correctly!"
+              grep "CONFIG_LOCALVERSION" out/.config || true
+          fi
 
       - name: Build kernel
         run: |
@@ -206,7 +216,7 @@ jobs:
           export STRIP=llvm-strip
           export LLVM=1
           export LLVM_IAS=1
-          export KBUILD_BUILD_USER=Droidspace
+          export KBUILD_BUILD_USER=DroidSpace
           export KBUILD_BUILD_HOST=github-actions
           echo "=== Verify tools ==="
           which ld.lld
@@ -225,7 +235,9 @@ jobs:
             OBJDUMP=llvm-objdump \
             STRIP=llvm-strip \
             LLVM=1 \
-            LLVM_IAS=1
+            LLVM_IAS=1 \
+            KBUILD_BUILD_USER="DroidSpace" \
+            KBUILD_BUILD_HOST="github-actions"
 
           echo "=== Build dtbo.img ==="
           make -j$(nproc) \
@@ -241,6 +253,8 @@ jobs:
             STRIP=llvm-strip \
             LLVM=1 \
             LLVM_IAS=1 \
+            KBUILD_BUILD_USER="DroidSpace" \
+            KBUILD_BUILD_HOST="github-actions" \
             dtbo.img 2>&1 || echo "dtbo.img target not available, skipping"
 
       - name: Package kernel
@@ -309,7 +323,7 @@ jobs:
               - Westwood TCP congestion
               - ntsync (NT synchronization primitives for Wine/Proton)
 
-            ${{ inputs.description || 'Droidspace Kernel for Poco F3 (alioth) with DroidSpaces support' }}
+            ${{ inputs.description || 'DroidSpace Kernel for Poco F3 (alioth) with DroidSpaces + cgroup v2 support' }}
           files: "*.zip"
           make_latest: true
         env:
