@@ -56,10 +56,10 @@ clone_kernel() {
         # Remove stale KernelSU-Next submodule (commit fc33995 doesn't exist upstream)
         rm -rf KernelSU-Next
         git config --unset-all submodule.KernelSU-Next.url 2>/dev/null || true
-        # Clone KernelSU-Next
-        echo "=== Cloning KernelSU-Next ($KSU_REPO - branch: ${KSU_BRANCH:-stable}) ==="
-        git clone --depth=1 -b ${KSU_BRANCH:-stable} ${KSU_REPO:-https://github.com/KernelSU-Next/KernelSU-Next.git} KernelSU-Next 2>/dev/null || \
-        git clone --depth=1 ${KSU_REPO:-https://github.com/KernelSU-Next/KernelSU-Next.git} KernelSU-Next
+        # Clone KernelSU
+        echo "=== Cloning KernelSU ($KSU_REPO - branch: ${KSU_BRANCH:-main}) ==="
+        git clone --depth=1 -b ${KSU_BRANCH:-main} ${KSU_REPO:-https://github.com/tiann/KernelSU.git} KernelSU-Next 2>/dev/null || \
+        git clone --depth=1 ${KSU_REPO:-https://github.com/tiann/KernelSU.git} KernelSU-Next
         if [ ! -f KernelSU-Next/kernel/Makefile ] && [ ! -f KernelSU-Next/kernel/Kbuild ]; then
             echo "ERROR: KernelSU-Next failed to checkout!"
             exit 1

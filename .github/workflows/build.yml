@@ -107,9 +107,9 @@ jobs:
           git config --unset-all submodule.KernelSU-Next.url 2>/dev/null || true
           # Sourced settings
           source ${{ github.workspace }}/settings.sh
-          echo "=== Cloning KernelSU-Next ($KSU_REPO - branch: ${KSU_BRANCH:-stable}) ==="
-          git clone --depth=1 -b ${KSU_BRANCH:-stable} ${KSU_REPO:-https://github.com/KernelSU-Next/KernelSU-Next.git} KernelSU-Next 2>/dev/null || \
-          git clone --depth=1 ${KSU_REPO:-https://github.com/KernelSU-Next/KernelSU-Next.git} KernelSU-Next
+          echo "=== Cloning KernelSU ($KSU_REPO - branch: ${KSU_BRANCH:-main}) ==="
+          git clone --depth=1 -b ${KSU_BRANCH:-main} ${KSU_REPO:-https://github.com/tiann/KernelSU.git} KernelSU-Next 2>/dev/null || \
+          git clone --depth=1 ${KSU_REPO:-https://github.com/tiann/KernelSU.git} KernelSU-Next
           # Verify KernelSU was checked out
           if [ ! -f KernelSU-Next/kernel/Makefile ] && [ ! -f KernelSU-Next/kernel/Kbuild ]; then
             echo "ERROR: KernelSU-Next failed to checkout!"

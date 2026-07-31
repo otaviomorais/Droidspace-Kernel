@@ -9,9 +9,9 @@ export EXTRA=""
 export SHAB=""
 export SHAK=""
 
-# KernelSU Fork (KernelSU-Next Oficial)
-export KSU_REPO="https://github.com/KernelSU-Next/KernelSU-Next.git"
-export KSU_BRANCH="stable"
+# KernelSU Oficial (tiann/KernelSU)
+export KSU_REPO="https://github.com/tiann/KernelSU.git"
+export KSU_BRANCH="main"
 
 
 
