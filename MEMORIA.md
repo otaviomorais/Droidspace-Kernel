@@ -1,24 +1,17 @@
-# MEMÓRIA COMPLETA - DESENVOLVIMENTO DROIDSPACE KERNEL v1.4.0 (ALIOTH)
+# MEMÓRIA COMPLETA - DESENVOLVIMENTO DROIDSPACE KERNEL v1.4.1 (ALIOTH)
 
 * **Data:** 31/07/2026
 * **Dispositivo Alvo:** Xiaomi POCO F3 / Redmi K40 / Mi 11X (`alioth` - Qualcomm Snapdragon 865 - SM8250)
 * **Repositório:** [otaviomorais/Droidspace-Kernel](https://github.com/otaviomorais/Droidspace-Kernel)
-* **Versão da Release:** `v1.4.0` (Build Run `#30642013618` - **SUCCESS**)
+* **Versão da Release:** `v1.4.1`
 
 ---
 
-## 1. Resumo das Modificações Realizadas (Release v1.4.0)
+## 1. Resumo das Modificações Realizadas (Release v1.4.1)
 
-### A) KernelSU SUSFS (Root Anti-Detection de Nível Kernel)
-* **Funcionalidade:** Adicionada a suite de camuflagem de root **SUSFS** (*KernelSU Overlay File System*).
-* **Configs Habilitadas:**
-  * `CONFIG_KSU_SUSFS=y`
-  * `CONFIG_KSU_SUSFS_SUS_MOUNT=y`
-  * `CONFIG_KSU_SUSFS_SUS_PATH=y`
-  * `CONFIG_KSU_SUSFS_SUS_KSTAT=y`
-  * `CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y`
-  * `CONFIG_KSU_SUSFS_TRY_UMOUNT=y`
-* **Resultado:** Root do KernelSU 100% oculto para testes de Play Integrity, SafetyNet, apps bancários e anti-cheats.
+### A) Remoção do SUSFS (Estabilização do Root KernelSU)
+* **Correção:** Desabilitadas as flags do `CONFIG_KSU_SUSFS` que estavam causando interferência nos hooks de montagem e concessão de root do `ksud`.
+* **Resultado:** Concessão de root limpa e imediata no RSUNT / MKSU Manager (`v32377`).
 
 ### B) Multi-Generational LRU (MGLRU) & Timer Tick 1000Hz
 * **MGLRU (`CONFIG_LRU_GEN=y`):** Melhora a tomada de decisão da memória RAM e reduz o congelamento (*lag*) quando o sistema estiver sob alta pressão de uso em containers (Winlator/Ludashi) e jogos.
@@ -27,7 +20,10 @@
 ### C) Compressão ZSTD na ZRAM 6.44GB
 * **Otimização:** Atualizado a compressão padrão da ZRAM de LZ4 para **ZSTD** (`CONFIG_ZRAM_DEF_COMP_ZSTD=y`), aumentando a taxa de compressão em até 30% mantendo altíssima velocidade.
 
-### D) Emulação & Containers (NTSync + Winlator / Ludashi)
+### D) Correção da Versão de Releases no CI/CD (GitHub Actions)
+* **Correção:** Resolvido o travamento no rótulo `v1.0.0`. Agora a Action lê dinamicamente a versão em `settings.sh`, nomeando automaticamente os ZIPs e tags como `v1.4.0`, `v1.5.0`, etc.
+
+### E) Emulação & Containers (NTSync + Winlator / Ludashi)
 * Driver **NTSYNC** nativo (`/dev/ntsync` permissão `0666`) 100% verificado e funcionando no **Winlator Frost** e **Winlator Ludashi**.
 * Proton 11 NTSync (`11.0-2-arm64ec`) e Proton 10.99 NTSync (`10.0.99-arm64ec+ntsync`) integrados e prontos no ambiente.
 
@@ -42,12 +38,21 @@
 ---
 
 ## 3. Log de Commits
-* `v1.4.0` (`0890520`): `feat: release v1.4.0 with SUSFS root-hide, MGLRU page reclamation, 1000Hz timer tick & ZSTD ZRAM` (CI Run #30642013618: **SUCCESS**)
+* `v1.4.0` (`a0adb27`): `fix: dynamically resolve release version from settings.sh (v1.4.0)` (CI Run #30648107520)
+* `v1.4.0` (`0890520`): `feat: release v1.4.0 with SUSFS root-hide, MGLRU page reclamation, 1000Hz timer tick & ZSTD ZRAM`
 * `v1.3.1`: `fix: double-pass 6GB ZRAM enforcement via fstab sed & overlay.d init service`
 * `v1.3.0`: `fix: update KernelSU version code to 32377 for manager compatibility`
 
 ---
 
 ## 4. Instruções de Instalação e Uso
-* **Gerenciador KSU Recomendado:** [RSUNT Manager APK](https://github.com/rsuntk/KernelSU/releases)
+* **Gerenciador KSU Recomendado:** [RSUNT Manager APK](https://github.com/rsuntk/KernelSU/releases) (Assinatura SHA-256 esperada pelo kernel: `f415f4ed9435427e1fdf7f1fccd4dbc07b3d6b8751e4dbcec6f19671f427870b`).
 * **Ativação do NTSYNC:** `WINE_NTSYNC = 1` nas variáveis do container.
+
+---
+
+## 5. Notas de Diagnóstico e Correções Rápidas (31/07/2026)
+* **ZRAM ZSTD Fix:** Atualizado em `build.sh` a regra do `overlay.d/init.zram.rc` para forçar `zstd` e 6.44GB no boot. Comando de ativação imediata: `su -c "echo 1 > /sys/block/zram0/reset && echo zstd > /sys/block/zram0/comp_algorithm && echo 6442450944 > /sys/block/zram0/disksize && mkswap /dev/block/zram0 && swapon /dev/block/zram0 -p 32767"`.
+* **KernelSU Profile Directory:** Criado `/data/adb/ksu/profile/selinux` (permissão `777`) para evitar falha no `ksud` ao salvar perfis de app no RSUNT Manager.
+* **Assinatura do Gerenciador KSU:** O kernel rejeita APKs gerenciadoras cuja hash SHA-256 da chave não bata com `f415f4ed9435427e1fdf7f1fccd4dbc07b3d6b8751e4dbcec6f19671f427870b` (assinatura do RSUNT Manager padrão).
+

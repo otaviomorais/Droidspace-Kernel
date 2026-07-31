@@ -134,7 +134,7 @@ clone_anykernel() {
     mkdir -p $ANYKERNEL_DIR/ramdisk/overlay.d
     cat << 'EOF' > $ANYKERNEL_DIR/ramdisk/overlay.d/init.zram.rc
 on property:sys.boot_completed=1
-    exec - root root -- /system/bin/sh -c "if [ \$(cat /sys/block/zram0/disksize 2>/dev/null || echo 0) -lt 6442450944 ]; then swapoff /dev/block/zram0 2>/dev/null; echo 1 > /sys/block/zram0/reset 2>/dev/null; echo 6442450944 > /sys/block/zram0/disksize 2>/dev/null; mkswap /dev/block/zram0 2>/dev/null; swapon /dev/block/zram0 -p 32767 2>/dev/null; fi"
+    exec - root root -- /system/bin/sh -c "swapoff /dev/block/zram0 2>/dev/null; echo 1 > /sys/block/zram0/reset 2>/dev/null; echo zstd > /sys/block/zram0/comp_algorithm 2>/dev/null; echo 6442450944 > /sys/block/zram0/disksize 2>/dev/null; mkswap /dev/block/zram0 2>/dev/null; swapon /dev/block/zram0 -p 32767 2>/dev/null"
 EOF
 
     # 2. Patch anykernel.sh for fstab modification during flashing
