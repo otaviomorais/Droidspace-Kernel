@@ -11,7 +11,7 @@ export SHAK=""
 
 # KernelSU Fork (KernelSU-Next Oficial)
 export KSU_REPO="https://github.com/KernelSU-Next/KernelSU-Next.git"
-export KSU_BRANCH="next"
+export KSU_BRANCH="stable"
 
 
 
