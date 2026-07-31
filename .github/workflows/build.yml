@@ -294,10 +294,15 @@ jobs:
           cd AnyKernel
           rm -f *.zip
           BUILD_DATE=$(date '+%Y-%m-%d_%H-%M-%S')
-          ZIP_NAME="Droidspace-alioth-v${{ inputs.version || '1.0.0' }}-${BUILD_DATE}.zip"
+          source "${{ github.workspace }}/settings.sh"
+          VER="${{ inputs.version }}"
+          if [ -z "$VER" ]; then VER="$VERSION"; fi
+          if [ -z "$VER" ]; then VER="1.4.0"; fi
+          ZIP_NAME="Droidspace-alioth-v${VER}-${BUILD_DATE}.zip"
           7z a -mx9 "$ZIP_NAME" * -x!*.zip
           cp "$ZIP_NAME" "${{ github.workspace }}/"
           echo "zip_name=$ZIP_NAME" >> "$GITHUB_OUTPUT"
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
           echo "Package created: $ZIP_NAME"
 
       - name: Upload artifact
@@ -310,10 +315,11 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ inputs.version || '1.0.0' }}
-          name: "Droidspace Kernel v${{ inputs.version || '1.0.0' }}"
+          tag_name: v${{ steps.package.outputs.version }}
+          name: "Droidspace Kernel v${{ steps.package.outputs.version }}"
           body: |
-            ## Droidspace Kernel v${{ inputs.version || '1.0.0' }}
+            ## Droidspace Kernel v${{ steps.package.outputs.version }}
+
 
             **Device:** POCO F3 (alioth)
             **Base:** MagicTime Kernel (TIMISONG-dev)
