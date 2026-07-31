@@ -58,7 +58,7 @@ clone_kernel() {
         git config --unset-all submodule.KernelSU-Next.url 2>/dev/null || true
         # Clone KernelSU-Next
         echo "=== Cloning KernelSU-Next ($KSU_REPO - branch: $KSU_BRANCH) ==="
-        git clone --depth=1 -b ${KSU_BRANCH:-next} ${KSU_REPO:-https://github.com/rifs33/KernelSU-Next.git} KernelSU-Next
+        git clone --depth=1 -b ${KSU_BRANCH:-next} ${KSU_REPO:-https://github.com/KernelSU-Next/KernelSU-Next.git} KernelSU-Next
         if [ ! -f KernelSU-Next/kernel/Makefile ] && [ ! -f KernelSU-Next/kernel/Kbuild ]; then
             echo "ERROR: KernelSU-Next failed to checkout!"
             exit 1

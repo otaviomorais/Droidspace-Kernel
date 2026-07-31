@@ -9,7 +9,7 @@
 
 ## 1. Resumo das Modificações Realizadas (Release v1.5.0 - Clean Build)
 
-### A) Migração Limpa para KernelSU-Next Oficial (`rifs33/KernelSU-Next`)
+### A) Migração Limpa para KernelSU-Next Oficial (`KernelSU-Next/KernelSU-Next`)
 * **Motivo:** O fork RSUNT/MKSU com versionamento forçado em `32377` gerou instabilidade e travamentos no subsistema de root do kernel.
 * **Solução:** Migração completa para a árvore oficial do **KernelSU-Next** (branch `next`), sem alterações invasivas no código de versão.
 * **Recursos de Hide Root:** Suporte nativo a umount automático, ocultação de montagens (`/proc/mounts`) e isolamento por app.
@@ -28,7 +28,7 @@
 
 ## 2. Instruções de Instalação e Instalação Limpa do Root
 1. **Flashing do Kernel:** Instalar a release ZIP `v1.5.0` via TWRP / OFRP / KernelSU Flasher.
-2. **Gerenciador KSU Recomendado:** Baixar e instalar o **KernelSU Next Manager APK** ([KernelSU-Next Releases](https://github.com/rifs33/KernelSU-Next/releases)).
+2. **Gerenciador KSU Recomendado:** Baixar e instalar o **KernelSU Next Manager APK** ([KernelSU-Next Releases](https://github.com/KernelSU-Next/KernelSU-Next/releases)).
 3. **Se o root não aparecer de imediato após reflash:** Limpar os dados do app gerenciador KernelSU nas Configurações do Android e reiniciar o dispositivo.
 
 ---
