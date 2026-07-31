@@ -1,58 +1,40 @@
-# MEMÓRIA COMPLETA - DESENVOLVIMENTO DROIDSPACE KERNEL v1.4.1 (ALIOTH)
+# MEMÓRIA COMPLETA - DESENVOLVIMENTO DROIDSPACE KERNEL v1.5.0 (ALIOTH)
 
 * **Data:** 31/07/2026
 * **Dispositivo Alvo:** Xiaomi POCO F3 / Redmi K40 / Mi 11X (`alioth` - Qualcomm Snapdragon 865 - SM8250)
 * **Repositório:** [otaviomorais/Droidspace-Kernel](https://github.com/otaviomorais/Droidspace-Kernel)
-* **Versão da Release:** `v1.4.1`
+* **Versão da Release:** `v1.5.0`
 
 ---
 
-## 1. Resumo das Modificações Realizadas (Release v1.4.1)
+## 1. Resumo das Modificações Realizadas (Release v1.5.0 - Clean Build)
 
-### A) Remoção do SUSFS (Estabilização do Root KernelSU)
-* **Correção:** Desabilitadas as flags do `CONFIG_KSU_SUSFS` que estavam causando interferência nos hooks de montagem e concessão de root do `ksud`.
-* **Resultado:** Concessão de root limpa e imediata no RSUNT / MKSU Manager (`v32377`).
+### A) Migração Limpa para KernelSU-Next Oficial (`rifs33/KernelSU-Next`)
+* **Motivo:** O fork RSUNT/MKSU com versionamento forçado em `32377` gerou instabilidade e travamentos no subsistema de root do kernel.
+* **Solução:** Migração completa para a árvore oficial do **KernelSU-Next** (branch `next`), sem alterações invasivas no código de versão.
+* **Recursos de Hide Root:** Suporte nativo a umount automático, ocultação de montagens (`/proc/mounts`) e isolamento por app.
 
 ### B) Multi-Generational LRU (MGLRU) & Timer Tick 1000Hz
-* **MGLRU (`CONFIG_LRU_GEN=y`):** Melhora a tomada de decisão da memória RAM e reduz o congelamento (*lag*) quando o sistema estiver sob alta pressão de uso em containers (Winlator/Ludashi) e jogos.
-* **1000Hz Timer Tick (`CONFIG_HZ_1000=y`):** Frequência de interrupção ajustada para 1000Hz (1ms), reduzindo a latência de toque no display e melhorando o frametime na emulação.
+* **MGLRU (`CONFIG_LRU_GEN=y`):** Melhora o gerenciamento de memória RAM e previne congelamentos durante uso de containers (Winlator/Ludashi) e jogos.
+* **1000Hz Timer Tick (`CONFIG_HZ_1000=y`):** Reduz a latência de entrada/toque no display e melhora o frametime em emuladores.
 
 ### C) Compressão ZSTD na ZRAM 6.44GB
-* **Otimização:** Atualizado a compressão padrão da ZRAM de LZ4 para **ZSTD** (`CONFIG_ZRAM_DEF_COMP_ZSTD=y`), aumentando a taxa de compressão em até 30% mantendo altíssima velocidade.
+* **Otimização:** ZRAM configurada nativamente em ZSTD (`CONFIG_ZRAM_DEF_COMP_ZSTD=y`), garantindo ganho significativo na taxa de compressão e velocidade.
 
-### D) Correção da Versão de Releases no CI/CD (GitHub Actions)
-* **Correção:** Resolvido o travamento no rótulo `v1.0.0`. Agora a Action lê dinamicamente a versão em `settings.sh`, nomeando automaticamente os ZIPs e tags como `v1.4.0`, `v1.5.0`, etc.
-
-### E) Emulação & Containers (NTSync + Winlator / Ludashi)
-* Driver **NTSYNC** nativo (`/dev/ntsync` permissão `0666`) 100% verificado e funcionando no **Winlator Frost** e **Winlator Ludashi**.
-* Proton 11 NTSync (`11.0-2-arm64ec`) e Proton 10.99 NTSync (`10.0.99-arm64ec+ntsync`) integrados e prontos no ambiente.
+### D) Emulação & Containers (NTSync + Winlator / Ludashi)
+* Driver **NTSYNC** nativo (`/dev/ntsync` permissão `0666`) ativado para suporte a jogos via Wine/Proton.
 
 ---
 
-## 2. Roteiro / Backports Planejados para a Versão v1.5.0
-1. **WireGuard Nativo (`CONFIG_WIREGUARD=y`):** Backport do driver de VPN acelerado por hardware (Linux 5.6+).
-2. **Otimizações Binder IPC (SultanXDA):** Redução da latência de troca de mensagens entre Android e Winlator.
-3. **Schedutil Fast-Ramp:** Escalamento de frequência de CPU responsivo para evitar drops de FPS em emuladores.
-4. **vDSO `clock_gettime`:** Aceleração de chamadas de relógio no espaço de usuário para o Wine/Proton.
+## 2. Instruções de Instalação e Instalação Limpa do Root
+1. **Flashing do Kernel:** Instalar a release ZIP `v1.5.0` via TWRP / OFRP / KernelSU Flasher.
+2. **Gerenciador KSU Recomendado:** Baixar e instalar o **KernelSU Next Manager APK** ([KernelSU-Next Releases](https://github.com/rifs33/KernelSU-Next/releases)).
+3. **Se o root não aparecer de imediato após reflash:** Limpar os dados do app gerenciador KernelSU nas Configurações do Android e reiniciar o dispositivo.
 
 ---
 
-## 3. Log de Commits
-* `v1.4.0` (`a0adb27`): `fix: dynamically resolve release version from settings.sh (v1.4.0)` (CI Run #30648107520)
-* `v1.4.0` (`0890520`): `feat: release v1.4.0 with SUSFS root-hide, MGLRU page reclamation, 1000Hz timer tick & ZSTD ZRAM`
-* `v1.3.1`: `fix: double-pass 6GB ZRAM enforcement via fstab sed & overlay.d init service`
-* `v1.3.0`: `fix: update KernelSU version code to 32377 for manager compatibility`
+## 3. Notas de Diagnóstico (31/07/2026)
+* **Remoção de overrides hardcoded:** Removidos todos os scripts `sed` que forçavam `KSU_VERSION=32377` no `build.sh` e `.github/workflows/build.yml`.
+* **KernelSU-Next compat:** Totalmente funcional em kernel Linux 4.19 no Snapdragon 865 (`alioth`).
 
----
-
-## 4. Instruções de Instalação e Uso
-* **Gerenciador KSU Recomendado:** [RSUNT Manager APK](https://github.com/rsuntk/KernelSU/releases) (Assinatura SHA-256 esperada pelo kernel: `f415f4ed9435427e1fdf7f1fccd4dbc07b3d6b8751e4dbcec6f19671f427870b`).
-* **Ativação do NTSYNC:** `WINE_NTSYNC = 1` nas variáveis do container.
-
----
-
-## 5. Notas de Diagnóstico e Correções Rápidas (31/07/2026)
-* **ZRAM ZSTD Fix:** Atualizado em `build.sh` a regra do `overlay.d/init.zram.rc` para forçar `zstd` e 6.44GB no boot. Comando de ativação imediata: `su -c "echo 1 > /sys/block/zram0/reset && echo zstd > /sys/block/zram0/comp_algorithm && echo 6442450944 > /sys/block/zram0/disksize && mkswap /dev/block/zram0 && swapon /dev/block/zram0 -p 32767"`.
-* **KernelSU Profile Directory:** Criado `/data/adb/ksu/profile/selinux` (permissão `777`) para evitar falha no `ksud` ao salvar perfis de app no RSUNT Manager.
-* **Assinatura do Gerenciador KSU:** O kernel rejeita APKs gerenciadoras cuja hash SHA-256 da chave não bata com `f415f4ed9435427e1fdf7f1fccd4dbc07b3d6b8751e4dbcec6f19671f427870b` (assinatura do RSUNT Manager padrão).
 

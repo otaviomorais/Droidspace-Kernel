@@ -56,11 +56,11 @@ clone_kernel() {
         # Remove stale KernelSU-Next submodule (commit fc33995 doesn't exist upstream)
         rm -rf KernelSU-Next
         git config --unset-all submodule.KernelSU-Next.url 2>/dev/null || true
-        # Clone KernelSU fork (MKSU / RSUNT)
-        echo "=== Cloning KernelSU ($KSU_REPO - branch: $KSU_BRANCH) ==="
-        git clone --depth=1 -b ${KSU_BRANCH:-main} ${KSU_REPO:-https://github.com/LKDenchin/rsuntk-KernelSU.git} KernelSU-Next
+        # Clone KernelSU-Next
+        echo "=== Cloning KernelSU-Next ($KSU_REPO - branch: $KSU_BRANCH) ==="
+        git clone --depth=1 -b ${KSU_BRANCH:-next} ${KSU_REPO:-https://github.com/rifs33/KernelSU-Next.git} KernelSU-Next
         if [ ! -f KernelSU-Next/kernel/Makefile ] && [ ! -f KernelSU-Next/kernel/Kbuild ]; then
-            echo "ERROR: KernelSU failed to checkout!"
+            echo "ERROR: KernelSU-Next failed to checkout!"
             exit 1
         fi
         # Ensure symlink exists
@@ -77,23 +77,14 @@ clone_kernel() {
         if [ -f KernelSU-Next/kernel/selinux/rules.c ]; then
             echo "=== Patching KernelSU for kernel 4.19 compat ==="
             sed -i 's/&current->cpus_allowed);/\&current->cpus_mask);/g' \
-                KernelSU-Next/kernel/selinux/rules.c
+                KernelSU-Next/kernel/selinux/rules.c 2>/dev/null || true
         fi
         # Provide weak stub for ksu_handle_sys_reboot if needed by kernel source
         if [ -f KernelSU-Next/kernel/ksu.c ]; then
             grep -q "ksu_handle_sys_reboot" KernelSU-Next/kernel/ksu.c || \
                 printf "\nvoid __attribute__((weak)) ksu_handle_sys_reboot(int *cmd) { (void)cmd; }\n" >> KernelSU-Next/kernel/ksu.c
         fi
-        # Force KSU_VERSION to 32377 for manager compatibility
-        if [ -f KernelSU-Next/kernel/ksu.h ]; then
-            echo "=== Setting KSU_VERSION to 32377 ==="
-            sed -i 's/#define KERNEL_SU_VERSION KSU_VERSION/#ifdef KSU_VERSION\n#undef KSU_VERSION\n#endif\n#define KSU_VERSION 32377\n#define KERNEL_SU_VERSION 32377/g' KernelSU-Next/kernel/ksu.h
-        fi
-        if [ -f KernelSU-Next/kernel/Makefile ]; then
-            sed -i 's/-DKSU_VERSION=$(KSU_VERSION)/-DKSU_VERSION=32377/g' KernelSU-Next/kernel/Makefile
-            sed -i 's/-DKSU_VERSION=16/-DKSU_VERSION=32377/g' KernelSU-Next/kernel/Makefile
-        fi
-        echo "=== KernelSU (MKSU v32377) ready ==="
+        echo "=== KernelSU-Next ready ==="
         cd $KERNEL
     fi
 }
