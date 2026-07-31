@@ -59,7 +59,7 @@ clone_kernel() {
         # Clone KernelSU fork (MKSU / RSUNT)
         echo "=== Cloning KernelSU ($KSU_REPO - branch: $KSU_BRANCH) ==="
         git clone --depth=1 -b ${KSU_BRANCH:-main} ${KSU_REPO:-https://github.com/LKDenchin/rsuntk-KernelSU.git} KernelSU-Next
-        if [ ! -f KernelSU-Next/kernel/Kbuild ]; then
+        if [ ! -f KernelSU-Next/kernel/Makefile ] && [ ! -f KernelSU-Next/kernel/Kbuild ]; then
             echo "ERROR: KernelSU failed to checkout!"
             exit 1
         fi
