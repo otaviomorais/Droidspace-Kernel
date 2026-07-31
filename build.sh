@@ -56,16 +56,14 @@ clone_kernel() {
         # Remove stale KernelSU-Next submodule (commit fc33995 doesn't exist upstream)
         rm -rf KernelSU-Next
         git config --unset-all submodule.KernelSU-Next.url 2>/dev/null || true
-        # Clone KernelSU-Next v3.2.0-legacy (v3.3.0 requer APIs 5.10+; SM8250 é 4.19)
-        echo "=== Cloning KernelSU-Next v3.2.0-legacy ==="
-        git clone --depth=1 --branch v3.2.0-legacy \
-            https://github.com/KernelSU-Next/KernelSU-Next.git \
-            KernelSU-Next
+        # Clone KernelSU fork (MKSU / RSUNT)
+        echo "=== Cloning KernelSU ($KSU_REPO - branch: $KSU_BRANCH) ==="
+        git clone --depth=1 -b ${KSU_BRANCH:-main} ${KSU_REPO:-https://github.com/LKDenchin/rsuntk-KernelSU.git} KernelSU-Next
         if [ ! -f KernelSU-Next/kernel/Kbuild ]; then
-            echo "ERROR: KernelSU-Next failed to checkout!"
+            echo "ERROR: KernelSU failed to checkout!"
             exit 1
         fi
-        # Ensure symlink exists (upstream has it, but verify)
+        # Ensure symlink exists
         if [ ! -L drivers/kernelsu ]; then
             ln -sf ../KernelSU-Next/kernel drivers/kernelsu
         fi
@@ -75,11 +73,13 @@ clone_kernel() {
         # Ensure Kconfig entry exists
         grep -q "drivers/kernelsu/Kconfig" drivers/Kconfig || \
             sed -i "/endmenu/i\source \"drivers/kernelsu/Kconfig\"" drivers/Kconfig
-        # Patch for kernel 4.19: cpus_allowed renamed to cpus_mask
-        echo "=== Patching KernelSU-Next for kernel 4.19 compat ==="
-        sed -i 's/&current->cpus_allowed);/\&current->cpus_mask);/g' \
-            KernelSU-Next/kernel/selinux/rules.c
-        echo "=== KernelSU-Next v3.2.0-legacy ready ==="
+        # Patch for kernel 4.19: cpus_allowed renamed to cpus_mask (if file exists)
+        if [ -f KernelSU-Next/kernel/selinux/rules.c ]; then
+            echo "=== Patching KernelSU for kernel 4.19 compat ==="
+            sed -i 's/&current->cpus_allowed);/\&current->cpus_mask);/g' \
+                KernelSU-Next/kernel/selinux/rules.c
+        fi
+        echo "=== KernelSU (MKSU) ready ==="
         cd $KERNEL
     fi
 }
@@ -114,6 +114,12 @@ clone_anykernel() {
     echo "=== Setting up AnyKernel ==="
     if [ ! -d $ANYKERNEL_DIR ]; then
         git clone --depth=1 $ANYKERNEL_LINK $ANYKERNEL_DIR
+    fi
+    echo "=== Patching AnyKernel for 6GB ZRAM ==="
+    if [ -f $ANYKERNEL_DIR/anykernel.sh ]; then
+        sed -i 's/zramsize=[0-9]*/zramsize=6442450944/g' $ANYKERNEL_DIR/anykernel.sh 2>/dev/null || true
+        grep -q "zramsize=6442450944" $ANYKERNEL_DIR/anykernel.sh || \
+            printf "\n# Set ZRAM to 6GB (6442450944 bytes)\npatch_fstab fstab.qcom \"zramsize=\" replace \"zramsize=6442450944\"\npatch_fstab fstab.default \"zramsize=\" replace \"zramsize=6442450944\"\n" >> $ANYKERNEL_DIR/anykernel.sh
     fi
 }
 

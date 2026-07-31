@@ -1218,11 +1218,19 @@ static const struct file_operations ntsync_fops = {
 	.compat_ioctl	= compat_ptr_ioctl,
 };
 
+static char *ntsync_devnode(struct device *dev, umode_t *mode)
+{
+	if (mode)
+		*mode = 0666;
+	return NULL;
+}
+
 static struct miscdevice ntsync_misc = {
 	.minor		= MISC_DYNAMIC_MINOR,
 	.name		= NTSYNC_NAME,
 	.fops		= &ntsync_fops,
 	.mode		= 0666,
+	.devnode	= ntsync_devnode,
 };
 
 module_misc_device(ntsync_misc);
