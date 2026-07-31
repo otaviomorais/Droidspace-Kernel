@@ -132,7 +132,23 @@ jobs:
             grep -q "ksu_handle_sys_reboot" KernelSU-Next/kernel/ksu.c || \
               printf "\nvoid __attribute__((weak)) ksu_handle_sys_reboot(int *cmd) { (void)cmd; }\n" >> KernelSU-Next/kernel/ksu.c
           fi
-          echo "=== KernelSU (MKSU / RSUNT) ready ==="
+          # Force KSU_VERSION to 32377 for manager compatibility
+          if [ -f KernelSU-Next/kernel/ksu.h ]; then
+            echo "=== Setting KSU_VERSION to 32377 ==="
+            python3 -c '
+path = "KernelSU-Next/kernel/ksu.h"
+with open(path, "r") as f:
+    content = f.read()
+content = content.replace("#define KERNEL_SU_VERSION KSU_VERSION", "#ifdef KSU_VERSION\n#undef KSU_VERSION\n#endif\n#define KSU_VERSION 32377\n#define KERNEL_SU_VERSION 32377")
+with open(path, "w") as f:
+    f.write(content)
+' 2>/dev/null || true
+          fi
+          if [ -f KernelSU-Next/kernel/Makefile ]; then
+            sed -i 's/-DKSU_VERSION=$(KSU_VERSION)/-DKSU_VERSION=32377/g' KernelSU-Next/kernel/Makefile
+            sed -i 's/-DKSU_VERSION=16/-DKSU_VERSION=32377/g' KernelSU-Next/kernel/Makefile
+          fi
+          echo "=== KernelSU (MKSU / RSUNT v32377) ready ==="
 
       - name: Setup ntsync
         run: |
