@@ -138,14 +138,7 @@ jobs:
           # Force KSU_VERSION to 32377 for manager compatibility
           if [ -f KernelSU-Next/kernel/ksu.h ]; then
             echo "=== Setting KSU_VERSION to 32377 ==="
-            python3 -c '
-path = "KernelSU-Next/kernel/ksu.h"
-with open(path, "r") as f:
-    content = f.read()
-content = content.replace("#define KERNEL_SU_VERSION KSU_VERSION", "#ifdef KSU_VERSION\n#undef KSU_VERSION\n#endif\n#define KSU_VERSION 32377\n#define KERNEL_SU_VERSION 32377")
-with open(path, "w") as f:
-    f.write(content)
-' 2>/dev/null || true
+            sed -i 's/#define KERNEL_SU_VERSION KSU_VERSION/#ifdef KSU_VERSION\n#undef KSU_VERSION\n#endif\n#define KSU_VERSION 32377\n#define KERNEL_SU_VERSION 32377/g' KernelSU-Next/kernel/ksu.h
           fi
           if [ -f KernelSU-Next/kernel/Makefile ]; then
             sed -i 's/-DKSU_VERSION=$(KSU_VERSION)/-DKSU_VERSION=32377/g' KernelSU-Next/kernel/Makefile
@@ -179,19 +172,10 @@ with open(path, "w") as f:
             AnyKernel
           echo "=== Patching AnyKernel for 6GB ZRAM & Overlay ==="
           mkdir -p AnyKernel/ramdisk/overlay.d
-          cat << 'EOF' > AnyKernel/ramdisk/overlay.d/init.zram.rc
-on property:sys.boot_completed=1
-    exec - root root -- /system/bin/sh -c "if [ \$(cat /sys/block/zram0/disksize 2>/dev/null || echo 0) -lt 6442450944 ]; then swapoff /dev/block/zram0 2>/dev/null; echo 1 > /sys/block/zram0/reset 2>/dev/null; echo 6442450944 > /sys/block/zram0/disksize 2>/dev/null; mkswap /dev/block/zram0 2>/dev/null; swapon /dev/block/zram0 -p 32767 2>/dev/null; fi"
-EOF
+          printf 'on property:sys.boot_completed=1\n    exec - root root -- /system/bin/sh -c "if [ $(cat /sys/block/zram0/disksize 2>/dev/null || echo 0) -lt 6442450944 ]; then swapoff /dev/block/zram0 2>/dev/null; echo 1 > /sys/block/zram0/reset 2>/dev/null; echo 6442450944 > /sys/block/zram0/disksize 2>/dev/null; mkswap /dev/block/zram0 2>/dev/null; swapon /dev/block/zram0 -p 32767 2>/dev/null; fi"\n' > AnyKernel/ramdisk/overlay.d/init.zram.rc
           if [ -f AnyKernel/anykernel.sh ]; then
             grep -q "Patching ZRAM size to 6GB" AnyKernel/anykernel.sh || \
-              sed -i '/dump_boot;/a \
-ui_print "Patching ZRAM size to 6GB (6442450944 bytes)...";\
-for fstab in $ramdisk/fstab* $ramdisk/etc/fstab* $ramdisk/vendor/etc/fstab* /vendor/etc/fstab* /system/etc/fstab*; do\
-  if [ -f "$fstab" ] && grep -q "zram" "$fstab"; then\
-    sed -i -E "s/zramsize=[0-9%]+/zramsize=6442450944/g" "$fstab" 2>/dev/null || true;\
-  fi;\
-done;' AnyKernel/anykernel.sh
+              printf '\n# Patch fstab for 6GB ZRAM\nui_print "Patching ZRAM size to 6GB (6442450944 bytes)...";\nfor fstab in $ramdisk/fstab* $ramdisk/etc/fstab* $ramdisk/vendor/etc/fstab* /vendor/etc/fstab* /system/etc/fstab*; do\n  if [ -f "$fstab" ] && grep -q "zram" "$fstab"; then\n    sed -i -E "s/zramsize=[0-9%%]+/zramsize=6442450944/g" "$fstab" 2>/dev/null || true;\n  fi;\ndone;\n' >> AnyKernel/anykernel.sh
           fi
 
       - name: Install kernel config

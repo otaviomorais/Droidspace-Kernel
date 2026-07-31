@@ -87,14 +87,7 @@ clone_kernel() {
         # Force KSU_VERSION to 32377 for manager compatibility
         if [ -f KernelSU-Next/kernel/ksu.h ]; then
             echo "=== Setting KSU_VERSION to 32377 ==="
-            python3 -c '
-path = "KernelSU-Next/kernel/ksu.h"
-with open(path, "r") as f:
-    content = f.read()
-content = content.replace("#define KERNEL_SU_VERSION KSU_VERSION", "#ifdef KSU_VERSION\n#undef KSU_VERSION\n#endif\n#define KSU_VERSION 32377\n#define KERNEL_SU_VERSION 32377")
-with open(path, "w") as f:
-    f.write(content)
-' 2>/dev/null || true
+            sed -i 's/#define KERNEL_SU_VERSION KSU_VERSION/#ifdef KSU_VERSION\n#undef KSU_VERSION\n#endif\n#define KSU_VERSION 32377\n#define KERNEL_SU_VERSION 32377/g' KernelSU-Next/kernel/ksu.h
         fi
         if [ -f KernelSU-Next/kernel/Makefile ]; then
             sed -i 's/-DKSU_VERSION=$(KSU_VERSION)/-DKSU_VERSION=32377/g' KernelSU-Next/kernel/Makefile
