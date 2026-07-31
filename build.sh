@@ -136,11 +136,24 @@ clone_anykernel() {
     if [ ! -d $ANYKERNEL_DIR ]; then
         git clone --depth=1 $ANYKERNEL_LINK $ANYKERNEL_DIR
     fi
-    echo "=== Patching AnyKernel for 6GB ZRAM ==="
+    echo "=== Patching AnyKernel for 6GB ZRAM & Overlay ==="
+    # 1. Inject overlay.d/init.zram.rc into AnyKernel ramdisk for automatic post-boot 6GB ZRAM enforcement
+    mkdir -p $ANYKERNEL_DIR/ramdisk/overlay.d
+    cat << 'EOF' > $ANYKERNEL_DIR/ramdisk/overlay.d/init.zram.rc
+on property:sys.boot_completed=1
+    exec - root root -- /system/bin/sh -c "if [ \$(cat /sys/block/zram0/disksize 2>/dev/null || echo 0) -lt 6442450944 ]; then swapoff /dev/block/zram0 2>/dev/null; echo 1 > /sys/block/zram0/reset 2>/dev/null; echo 6442450944 > /sys/block/zram0/disksize 2>/dev/null; mkswap /dev/block/zram0 2>/dev/null; swapon /dev/block/zram0 -p 32767 2>/dev/null; fi"
+EOF
+
+    # 2. Patch anykernel.sh for fstab modification during flashing
     if [ -f $ANYKERNEL_DIR/anykernel.sh ]; then
-        sed -i 's/zramsize=[0-9]*/zramsize=6442450944/g' $ANYKERNEL_DIR/anykernel.sh 2>/dev/null || true
-        grep -q "zramsize=6442450944" $ANYKERNEL_DIR/anykernel.sh || \
-            printf "\n# Set ZRAM to 6GB (6442450944 bytes)\npatch_fstab fstab.qcom \"zramsize=\" replace \"zramsize=6442450944\"\npatch_fstab fstab.default \"zramsize=\" replace \"zramsize=6442450944\"\n" >> $ANYKERNEL_DIR/anykernel.sh
+        grep -q "Patching ZRAM size to 6GB" $ANYKERNEL_DIR/anykernel.sh || \
+            sed -i '/dump_boot;/a \
+ui_print "Patching ZRAM size to 6GB (6442450944 bytes)...";\
+for fstab in $ramdisk/fstab* $ramdisk/etc/fstab* $ramdisk/vendor/etc/fstab* /vendor/etc/fstab* /system/etc/fstab*; do\
+  if [ -f "$fstab" ] && grep -q "zram" "$fstab"; then\
+    sed -i -E "s/zramsize=[0-9%]+/zramsize=6442450944/g" "$fstab" 2>/dev/null || true;\
+  fi;\
+done;' $ANYKERNEL_DIR/anykernel.sh
     fi
 }
 

@@ -174,11 +174,21 @@ with open(path, "w") as f:
           git clone --depth=1 \
             https://github.com/TIMISONG-dev/MagicTime-alioth.git \
             AnyKernel
-          echo "=== Patching AnyKernel for 6GB ZRAM ==="
+          echo "=== Patching AnyKernel for 6GB ZRAM & Overlay ==="
+          mkdir -p AnyKernel/ramdisk/overlay.d
+          cat << 'EOF' > AnyKernel/ramdisk/overlay.d/init.zram.rc
+on property:sys.boot_completed=1
+    exec - root root -- /system/bin/sh -c "if [ \$(cat /sys/block/zram0/disksize 2>/dev/null || echo 0) -lt 6442450944 ]; then swapoff /dev/block/zram0 2>/dev/null; echo 1 > /sys/block/zram0/reset 2>/dev/null; echo 6442450944 > /sys/block/zram0/disksize 2>/dev/null; mkswap /dev/block/zram0 2>/dev/null; swapon /dev/block/zram0 -p 32767 2>/dev/null; fi"
+EOF
           if [ -f AnyKernel/anykernel.sh ]; then
-            sed -i 's/zramsize=[0-9]*/zramsize=6442450944/g' AnyKernel/anykernel.sh 2>/dev/null || true
-            grep -q "zramsize=6442450944" AnyKernel/anykernel.sh || \
-              printf "\n# Set ZRAM to 6GB (6442450944 bytes)\npatch_fstab fstab.qcom \"zramsize=\" replace \"zramsize=6442450944\"\npatch_fstab fstab.default \"zramsize=\" replace \"zramsize=6442450944\"\n" >> AnyKernel/anykernel.sh
+            grep -q "Patching ZRAM size to 6GB" AnyKernel/anykernel.sh || \
+              sed -i '/dump_boot;/a \
+ui_print "Patching ZRAM size to 6GB (6442450944 bytes)...";\
+for fstab in $ramdisk/fstab* $ramdisk/etc/fstab* $ramdisk/vendor/etc/fstab* /vendor/etc/fstab* /system/etc/fstab*; do\
+  if [ -f "$fstab" ] && grep -q "zram" "$fstab"; then\
+    sed -i -E "s/zramsize=[0-9%]+/zramsize=6442450944/g" "$fstab" 2>/dev/null || true;\
+  fi;\
+done;' AnyKernel/anykernel.sh
           fi
 
       - name: Install kernel config
