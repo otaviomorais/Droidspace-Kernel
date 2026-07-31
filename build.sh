@@ -79,6 +79,11 @@ clone_kernel() {
             sed -i 's/&current->cpus_allowed);/\&current->cpus_mask);/g' \
                 KernelSU-Next/kernel/selinux/rules.c
         fi
+        # Provide weak stub for ksu_handle_sys_reboot if needed by kernel source
+        if [ -f KernelSU-Next/kernel/ksu.c ]; then
+            grep -q "ksu_handle_sys_reboot" KernelSU-Next/kernel/ksu.c || \
+                printf "\nvoid __attribute__((weak)) ksu_handle_sys_reboot(int *cmd) { (void)cmd; }\n" >> KernelSU-Next/kernel/ksu.c
+        fi
         echo "=== KernelSU (MKSU) ready ==="
         cd $KERNEL
     fi
