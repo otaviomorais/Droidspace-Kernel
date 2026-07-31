@@ -193,6 +193,15 @@ build() {
     grep -q "CONFIG_NTSYNC=y" "$OUT/.config" && echo "ntsync enabled: YES" || echo "WARNING: ntsync not enabled!"
     # Verify cgroup v2 is enabled
     grep -q "CONFIG_CGROUP2=y" "$OUT/.config" && echo "cgroup v2: YES" || echo "WARNING: cgroup v2 not enabled!"
+    # Verify SUSFS is enabled
+    grep -q "CONFIG_KSU_SUSFS=y" "$OUT/.config" && echo "SUSFS enabled: YES" || echo "WARNING: SUSFS not enabled!"
+    # Verify MGLRU is enabled
+    grep -q "CONFIG_LRU_GEN=y" "$OUT/.config" && echo "MGLRU enabled: YES" || echo "WARNING: MGLRU not enabled!"
+    # Verify 1000Hz timer tick is enabled
+    grep -q "CONFIG_HZ_1000=y" "$OUT/.config" && echo "1000Hz Timer Tick: YES" || echo "WARNING: 1000Hz not enabled!"
+    # Verify ZSTD ZRAM is enabled
+    grep -q "CONFIG_ZRAM_DEF_COMP_ZSTD=y" "$OUT/.config" && echo "ZSTD ZRAM: YES" || echo "WARNING: ZSTD ZRAM not enabled!"
+
     # Set kernel local version suffix — kernel reports "DroidSpace" in `uname -r`
     LOCALVERSION="-DroidSpace"
     scripts/config --file "$OUT/.config" --set-str CONFIG_LOCALVERSION "$LOCALVERSION"
