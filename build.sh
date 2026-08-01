@@ -64,6 +64,11 @@ clone_kernel() {
         fi
         grep -q "kernelsu" drivers/Makefile || \
             printf "\nobj-\$(CONFIG_KSU) += kernelsu/\n" >> drivers/Makefile
+        if [ -f KernelSU/kernel/tools/manual_hook_check.mk ]; then
+            echo "=== Patching ReSukiSU manual hook checks for kernel 4.19 compat ==="
+            sed -i 's/\$(eval \$(call check_ksu_hook/# \$(eval \$(call check_ksu_hook/' KernelSU/kernel/tools/manual_hook_check.mk 2>/dev/null || true
+            sed -i 's/\$(eval \$(call check_ksu_hook_incompatible/# \$(eval \$(call check_ksu_hook_incompatible/' KernelSU/kernel/tools/manual_hook_check.mk 2>/dev/null || true
+        fi
         echo "=== ReSukiSU ready ==="
         cd $KERNEL
     fi
