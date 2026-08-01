@@ -126,12 +126,12 @@ jobs:
           export SUBARCH=arm64
           cd kernel_source
           # Generate base config
-          make O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 vendor/alioth_defconfig || make O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 alioth_defconfig
+          make O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=0 vendor/alioth_defconfig || make O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=0 alioth_defconfig
           # Merge config fragments
           scripts/kconfig/merge_config.sh -O out \
             out/.config \
             arch/arm64/configs/vendor/xiaomi/droidspaces.config
-          make O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 olddefconfig
+          make O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=0 olddefconfig
           # Verify KSU is enabled
           grep -q "CONFIG_KSU=y" out/.config && echo "KSU enabled: YES" || echo "WARNING: KSU not enabled!"
           # Verify ntsync is enabled
@@ -153,7 +153,7 @@ jobs:
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
             LLVM=1 \
-            LLVM_IAS=1
+            LLVM_IAS=0
 
           echo "=== Build dtbo.img ==="
           make -j$(nproc) \
@@ -164,7 +164,7 @@ jobs:
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
             LLVM=1 \
-            LLVM_IAS=1 \
+            LLVM_IAS=0 \
             dtbo.img 2>&1 || echo "dtbo.img target not available, skipping"
 
       - name: Package kernel
