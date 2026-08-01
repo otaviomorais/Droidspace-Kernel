@@ -116,12 +116,12 @@ build() {
     cp $KERNEL/configs/droidspaces.config arch/arm64/configs/vendor/xiaomi/droidspaces.config
 
     echo "=== Configuring kernel ==="
-    make O="$OUT" ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=0 vendor/alioth_defconfig 2>&1 | tee ../build_config.log || make O="$OUT" ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=0 alioth_defconfig 2>&1 | tee ../build_config.log
+    make O="$OUT" ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 vendor/alioth_defconfig 2>&1 | tee ../build_config.log || make O="$OUT" ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 alioth_defconfig 2>&1 | tee ../build_config.log
     # Merge config fragments properly
     scripts/kconfig/merge_config.sh -O "$OUT" \
         "$OUT/.config" \
         arch/arm64/configs/vendor/xiaomi/droidspaces.config 2>&1 | tee -a ../build_config.log
-    make O="$OUT" ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=0 olddefconfig 2>&1 | tee -a ../build_config.log
+    make O="$OUT" ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 olddefconfig 2>&1 | tee -a ../build_config.log
     # Verify KSU is enabled
     grep -q "CONFIG_KSU=y" "$OUT/.config" && echo "KSU enabled: YES" || echo "WARNING: KSU not enabled!"
     # Verify ntsync is enabled
@@ -146,7 +146,7 @@ build() {
         CROSS_COMPILE=aarch64-linux-gnu- \
         CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
         LLVM=1 \
-        LLVM_IAS=0 \
+        LLVM_IAS=1 \
         KBUILD_BUILD_USER="DroidSpace" \
         KBUILD_BUILD_HOST="github-actions" \
         2>&1 | tee ../build.log
