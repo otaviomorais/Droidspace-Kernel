@@ -42,6 +42,8 @@ clone_kernel() {
         if [ ! -L drivers/kernelsu ]; then
             ln -sf ../KernelSU/kernel drivers/kernelsu
         fi
+        # Fix empty obj-y on line 88 in starscroch drivers/Makefile and add KSU
+        sed -i 's/^obj-y[ \t]*$/obj-$(CONFIG_KSU) += kernelsu\//' drivers/Makefile
         grep -q "kernelsu" drivers/Makefile || \
             printf "\nobj-\$(CONFIG_KSU) += kernelsu/\n" >> drivers/Makefile
         if [ -f KernelSU/kernel/tools/manual_hook_check.mk ]; then
