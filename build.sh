@@ -10,13 +10,8 @@ source settings.sh
 KERNEL=$PWD
 KERNEL_SOURCE=$KERNEL/kernel_source
 
-CLANG=$KERNEL/toolchains/clang
-GCC_ARM=$KERNEL/toolchains/arm-linux-androideabi-4.9
-GCC_AARCH64=$KERNEL/toolchains/aarch64-linux-android-4.9
-
-CLANG_LINK="https://github.com/ZyCromerZ/Clang/releases/download/20.0.0git-20250129-release/Clang-20.0.0git-20250129.tar.gz"
-GCC_ARM_LINK="https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9"
-GCC_AARCH64_LINK="https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9"
+CLANG=$KERNEL/toolchains/proton-clang
+CLANG_LINK="https://github.com/kdrag0n/proton-clang"
 KERNEL_REPO="https://github.com/starscroch/kernel_xiaomi_sm8250.git"
 KERNEL_BRANCH="lineage-sunflower"
 ANYKERNEL_LINK="https://github.com/TIMISONG-dev/MagicTime-alioth"
@@ -26,26 +21,11 @@ setup_toolchains() {
     echo "=== Setting up toolchains ==="
 
     if [ ! -d $CLANG ]; then
-        echo "Downloading Clang..."
-        mkdir -p $CLANG
-        cd $CLANG
-        wget -q -O clang.tar.gz $CLANG_LINK
-        tar -zxf clang.tar.gz --strip-components=1
-        rm -f clang.tar.gz
-        cd $KERNEL
+        echo "Downloading Proton Clang 13..."
+        git clone --depth=1 $CLANG_LINK $CLANG
     fi
 
-    if [ ! -d $GCC_ARM ]; then
-        echo "Downloading GCC ARM..."
-        git clone --depth=1 $GCC_ARM_LINK $GCC_ARM
-    fi
-
-    if [ ! -d $GCC_AARCH64 ]; then
-        echo "Downloading GCC AARCH64..."
-        git clone --depth=1 $GCC_AARCH64_LINK $GCC_AARCH64
-    fi
-
-    export PATH=$CLANG/bin:$GCC_AARCH64/bin:$GCC_ARM/bin:$PATH
+    export PATH=$CLANG/bin:$PATH
 }
 
 clone_kernel() {
@@ -108,21 +88,12 @@ clone_anykernel() {
     echo "=== Patching AnyKernel for 6GB ZRAM & Overlay ==="
     # 1. Inject overlay.d/init.zram.rc into AnyKernel ramdisk for automatic post-boot 6GB ZRAM enforcement
     mkdir -p $ANYKERNEL_DIR/ramdisk/overlay.d
-    cat << 'EOF' > $ANYKERNEL_DIR/ramdisk/overlay.d/init.zram.rc
-on property:sys.boot_completed=1
-    exec - root root -- /system/bin/sh -c "swapoff /dev/block/zram0 2>/dev/null; echo 1 > /sys/block/zram0/reset 2>/dev/null; echo zstd > /sys/block/zram0/comp_algorithm 2>/dev/null; echo 6442450944 > /sys/block/zram0/disksize 2>/dev/null; mkswap /dev/block/zram0 2>/dev/null; swapon /dev/block/zram0 -p 32767 2>/dev/null"
-EOF
+    printf 'on property:sys.boot_completed=1\n    exec - root root -- /system/bin/sh -c "if [ $(cat /sys/block/zram0/disksize 2>/dev/null || echo 0) -lt 6442450944 ]; then swapoff /dev/block/zram0 2>/dev/null; echo 1 > /sys/block/zram0/reset 2>/dev/null; echo 6442450944 > /sys/block/zram0/disksize 2>/dev/null; mkswap /dev/block/zram0 2>/dev/null; swapon /dev/block/zram0 -p 32767 2>/dev/null; fi"\n' > $ANYKERNEL_DIR/ramdisk/overlay.d/init.zram.rc
 
-    # 2. Patch anykernel.sh for fstab modification during flashing
+    # 2. Add dynamic fstab patch in anykernel.sh
     if [ -f $ANYKERNEL_DIR/anykernel.sh ]; then
         grep -q "Patching ZRAM size to 6GB" $ANYKERNEL_DIR/anykernel.sh || \
-            sed -i '/dump_boot;/a \
-ui_print "Patching ZRAM size to 6GB (6442450944 bytes)...";\
-for fstab in $ramdisk/fstab* $ramdisk/etc/fstab* $ramdisk/vendor/etc/fstab* /vendor/etc/fstab* /system/etc/fstab*; do\
-  if [ -f "$fstab" ] && grep -q "zram" "$fstab"; then\
-    sed -i -E "s/zramsize=[0-9%]+/zramsize=6442450944/g" "$fstab" 2>/dev/null || true;\
-  fi;\
-done;' $ANYKERNEL_DIR/anykernel.sh
+            printf '\n# Patch fstab for 6GB ZRAM\nui_print "Patching ZRAM size to 6GB (6442450944 bytes)...";\nfor fstab in $ramdisk/fstab* $ramdisk/etc/fstab* $ramdisk/vendor/etc/fstab* /vendor/etc/fstab* /system/etc/fstab*; do\n  if [ -f "$fstab" ] && grep -q "zram" "$fstab"; then\n    sed -i -E "s/zramsize=[0-9%%]+/zramsize=6442450944/g" "$fstab" 2>/dev/null || true;\n  fi;\ndone;\n' >> $ANYKERNEL_DIR/anykernel.sh
     fi
 }
 
@@ -133,7 +104,7 @@ build() {
 
     export ARCH=arm64
     export SUBARCH=arm64
-    export PATH=$CLANG/bin:$GCC_AARCH64/bin:$GCC_ARM/bin:$PATH
+    export PATH=$CLANG/bin:$PATH
     export KBUILD_BUILD_USER=DroidSpace
     export KBUILD_BUILD_HOST=github-actions
 
@@ -156,10 +127,6 @@ build() {
     grep -q "CONFIG_NTSYNC=y" "$OUT/.config" && echo "ntsync enabled: YES" || echo "WARNING: ntsync not enabled!"
     # Verify cgroup v2 is enabled
     grep -q "CONFIG_CGROUP2=y" "$OUT/.config" && echo "cgroup v2: YES" || echo "WARNING: cgroup v2 not enabled!"
-    # Verify SUSFS is enabled
-    grep -q "CONFIG_KSU_SUSFS=y" "$OUT/.config" && echo "SUSFS enabled: YES" || echo "WARNING: SUSFS not enabled!"
-    # Verify MGLRU is enabled
-    grep -q "CONFIG_LRU_GEN=y" "$OUT/.config" && echo "MGLRU enabled: YES" || echo "WARNING: MGLRU not enabled!"
     # Verify 1000Hz timer tick is enabled
     grep -q "CONFIG_HZ_1000=y" "$OUT/.config" && echo "1000Hz Timer Tick: YES" || echo "WARNING: 1000Hz not enabled!"
     # Verify ZSTD ZRAM is enabled
@@ -168,12 +135,6 @@ build() {
     # Set kernel local version suffix — kernel reports "DroidSpace" in `uname -r`
     LOCALVERSION="-DroidSpace"
     scripts/config --file "$OUT/.config" --set-str CONFIG_LOCALVERSION "$LOCALVERSION"
-    if grep -q '^CONFIG_LOCALVERSION="-DroidSpace"$' "$OUT/.config"; then
-        echo "Local version: DroidSpace"
-    else
-        echo "WARNING: Local version not set correctly!"
-        grep "CONFIG_LOCALVERSION" "$OUT/.config" || true
-    fi
 
     echo "=== Building kernel ==="
     make -j$(nproc) \
@@ -181,9 +142,13 @@ build() {
         ARCH=arm64 \
         SUBARCH=arm64 \
         CC=clang \
-        CLANG_TRIPLE=aarch64-linux-android- \
-        CROSS_COMPILE=aarch64-linux-android- \
-        CROSS_COMPILE_ARM32=arm-linux-androideabi- \
+        CROSS_COMPILE=aarch64-linux-gnu- \
+        CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+        AR=llvm-ar \
+        NM=llvm-nm \
+        OBJCOPY=llvm-objcopy \
+        OBJDUMP=llvm-objdump \
+        STRIP=llvm-strip \
         KBUILD_BUILD_USER="DroidSpace" \
         KBUILD_BUILD_HOST="github-actions" \
         2>&1 | tee ../build.log

@@ -45,56 +45,13 @@ jobs:
           key: ${{ runner.os }}-kernel-ccache
           max-size: 10G
 
-      - name: Download Clang toolchain
+      - name: Setup Proton Clang toolchain
         run: |
-          mkdir -p toolchains/clang
-          wget -q -O /tmp/clang.tar.gz \
-            "https://github.com/ZyCromerZ/Clang/releases/download/20.0.0git-20250129-release/Clang-20.0.0git-20250129.tar.gz"
-          tar -zxf /tmp/clang.tar.gz -C toolchains/clang
-          rm -f /tmp/clang.tar.gz
-          echo "=== Structure ==="
-          ls toolchains/clang/
-          echo "=== bin/ exists? ==="
-          ls toolchains/clang/bin/ 2>/dev/null | head -5 || echo "No bin/ directory"
-          echo "=== ld.lld locations ==="
-          find toolchains/clang -name 'ld.lld' 2>/dev/null
-          find toolchains/clang -name 'lld' -type f 2>/dev/null
-          echo "=== Clang version ==="
-          find toolchains/clang -name 'clang' -type f -executable | head -1 | xargs {} --version 2>/dev/null | head -1 || true
-
-      - name: Fix toolchain paths
-        run: |
-          CLANG_DIR="${{ github.workspace }}/toolchains/clang"
-
-          if [ -d "${CLANG_DIR}/bin" ]; then
-            echo "tarball has bin/ dir, using as-is"
-            CLANG_BIN="${CLANG_DIR}/bin"
-          else
-            echo "tarball has no bin/ dir, creating one with symlinks"
-            mkdir -p "${CLANG_DIR}/bin"
-            for f in "${CLANG_DIR}"/*; do
-              if [ -f "$f" ] && [ -x "$f" ]; then
-                ln -sf "$f" "${CLANG_DIR}/bin/$(basename "$f")"
-              fi
-            done
-            CLANG_BIN="${CLANG_DIR}/bin"
-          fi
-
-          echo "=== Clang bin contents ==="
-          ls "${CLANG_BIN}/" | grep -E 'clang|ld\.lld|lld|ar|nm|objcopy|objdump|strip|as|readelf' || true
-          echo "=== Verify ld.lld ==="
-          "${CLANG_BIN}/ld.lld" --version 2>&1 | head -1 || echo "ld.lld not executable"
-          echo "=== Verify clang ==="
-          "${CLANG_BIN}/clang" --version 2>&1 | head -1 || echo "clang not found"
-
-      - name: Download GCC toolchains
-        run: |
-          git clone --depth=1 \
-            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 \
-            toolchains/arm-linux-androideabi-4.9
-          git clone --depth=1 \
-            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 \
-            toolchains/aarch64-linux-android-4.9
+          mkdir -p toolchains
+          echo "=== Downloading Proton Clang 13 ==="
+          git clone --depth=1 https://github.com/kdrag0n/proton-clang toolchains/proton-clang
+          echo "=== Verify Proton Clang ==="
+          "${{ github.workspace }}/toolchains/proton-clang/bin/clang" --version
 
       - name: Clone kernel source
         run: |
@@ -161,23 +118,17 @@ jobs:
 
       - name: Configure kernel
         run: |
-          CLANG_DIR="${{ github.workspace }}/toolchains/clang"
-          if [ -d "${CLANG_DIR}/bin" ] && [ -f "${CLANG_DIR}/bin/clang" ]; then
-            CLANG_BIN="${CLANG_DIR}/bin"
-          else
-            CLANG_BIN="${CLANG_DIR}"
-          fi
-          export PATH="${CLANG_BIN}:${{ github.workspace }}/toolchains/aarch64-linux-android-4.9/bin:${{ github.workspace }}/toolchains/arm-linux-androideabi-4.9/bin:$PATH"
+          export PATH="${{ github.workspace }}/toolchains/proton-clang/bin:$PATH"
           export ARCH=arm64
           export SUBARCH=arm64
           cd kernel_source
           # Generate base config
-          make O=out vendor/alioth_defconfig || make O=out alioth_defconfig
+          make O=out ARCH=arm64 vendor/alioth_defconfig || make O=out ARCH=arm64 alioth_defconfig
           # Merge config fragments
           scripts/kconfig/merge_config.sh -O out \
             out/.config \
             arch/arm64/configs/vendor/xiaomi/droidspaces.config
-          make O=out olddefconfig
+          make O=out ARCH=arm64 olddefconfig
           # Verify KSU is enabled
           grep -q "CONFIG_KSU=y" out/.config && echo "KSU enabled: YES" || echo "WARNING: KSU not enabled!"
           # Verify ntsync is enabled
@@ -185,13 +136,7 @@ jobs:
 
       - name: Build kernel
         run: |
-          CLANG_DIR="${{ github.workspace }}/toolchains/clang"
-          if [ -d "${CLANG_DIR}/bin" ] && [ -f "${CLANG_DIR}/bin/clang" ]; then
-            CLANG_BIN="${CLANG_DIR}/bin"
-          else
-            CLANG_BIN="${CLANG_DIR}"
-          fi
-          export PATH="${CLANG_BIN}:${{ github.workspace }}/toolchains/aarch64-linux-android-4.9/bin:${{ github.workspace }}/toolchains/arm-linux-androideabi-4.9/bin:$PATH"
+          export PATH="${{ github.workspace }}/toolchains/proton-clang/bin:$PATH"
           export ARCH=arm64
           export SUBARCH=arm64
           export KBUILD_BUILD_USER=Droidspace
@@ -202,9 +147,13 @@ jobs:
             ARCH=arm64 \
             SUBARCH=arm64 \
             CC=clang \
-            CLANG_TRIPLE=aarch64-linux-android- \
-            CROSS_COMPILE=aarch64-linux-android- \
-            CROSS_COMPILE_ARM32=arm-linux-androideabi-
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip
 
           echo "=== Build dtbo.img ==="
           make -j$(nproc) \
@@ -212,9 +161,13 @@ jobs:
             ARCH=arm64 \
             SUBARCH=arm64 \
             CC=clang \
-            CLANG_TRIPLE=aarch64-linux-android- \
-            CROSS_COMPILE=aarch64-linux-android- \
-            CROSS_COMPILE_ARM32=arm-linux-androideabi- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
             dtbo.img 2>&1 || echo "dtbo.img target not available, skipping"
 
       - name: Package kernel
