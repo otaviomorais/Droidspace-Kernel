@@ -133,19 +133,7 @@ build() {
 
     export ARCH=arm64
     export SUBARCH=arm64
-    export CROSS_COMPILE=aarch64-linux-gnu-
-    export CROSS_COMPILE_COMPAT=arm-linux-gnueabi-
-    export CC="ccache clang"
-    export HOSTCC=gcc
-    export LD=ld.lld
-    export AS=llvm-as
-    export AR=llvm-ar
-    export NM=llvm-nm
-    export OBJCOPY=llvm-objcopy
-    export OBJDUMP=llvm-objdump
-    export STRIP=llvm-strip
-    export LLVM=1
-    export LLVM_IAS=1
+    export PATH=$CLANG/bin:$GCC_AARCH64/bin:$GCC_ARM/bin:$PATH
     export KBUILD_BUILD_USER=DroidSpace
     export KBUILD_BUILD_HOST=github-actions
 
@@ -156,12 +144,12 @@ build() {
     cp $KERNEL/configs/droidspaces.config arch/arm64/configs/vendor/xiaomi/droidspaces.config
 
     echo "=== Configuring kernel ==="
-    make O="$OUT" vendor/alioth_defconfig 2>&1 | tee ../build_config.log || make O="$OUT" alioth_defconfig 2>&1 | tee ../build_config.log
+    make O="$OUT" ARCH=arm64 vendor/alioth_defconfig 2>&1 | tee ../build_config.log || make O="$OUT" ARCH=arm64 alioth_defconfig 2>&1 | tee ../build_config.log
     # Merge config fragments properly
     scripts/kconfig/merge_config.sh -O "$OUT" \
         "$OUT/.config" \
         arch/arm64/configs/vendor/xiaomi/droidspaces.config 2>&1 | tee -a ../build_config.log
-    make O="$OUT" olddefconfig 2>&1 | tee -a ../build_config.log
+    make O="$OUT" ARCH=arm64 olddefconfig 2>&1 | tee -a ../build_config.log
     # Verify KSU is enabled
     grep -q "CONFIG_KSU=y" "$OUT/.config" && echo "KSU enabled: YES" || echo "WARNING: KSU not enabled!"
     # Verify ntsync is enabled
@@ -190,17 +178,12 @@ build() {
     echo "=== Building kernel ==="
     make -j$(nproc) \
         O="$OUT" \
-        CC="ccache clang" \
-        HOSTCC=gcc \
-        LD=ld.lld \
-        AS=llvm-as \
-        AR=llvm-ar \
-        NM=llvm-nm \
-        OBJCOPY=llvm-objcopy \
-        OBJDUMP=llvm-objdump \
-        STRIP=llvm-strip \
-        LLVM=1 \
-        LLVM_IAS=1 \
+        ARCH=arm64 \
+        SUBARCH=arm64 \
+        CC=clang \
+        CLANG_TRIPLE=aarch64-linux-android- \
+        CROSS_COMPILE=aarch64-linux-android- \
+        CROSS_COMPILE_ARM32=arm-linux-androideabi- \
         KBUILD_BUILD_USER="DroidSpace" \
         KBUILD_BUILD_HOST="github-actions" \
         2>&1 | tee ../build.log
