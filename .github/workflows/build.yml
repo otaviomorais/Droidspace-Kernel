@@ -10,7 +10,7 @@ on:
       release_desc:
         description: 'Release description'
         required: false
-        default: 'Droidspace Kernel v1.5.0 for Poco F3 (alioth) with KernelSU-Next Clean Root + NTSYNC + MGLRU + 1000Hz + 6GB ZRAM ZSTD'
+        default: 'Droidspace Kernel v1.5.0 for Poco F3 (alioth) with ReSukiSU (Manual Hook + Multi-Manager) + NTSYNC + MGLRU + 1000Hz + 6GB ZRAM ZSTD'
   push:
     branches:
       - main
@@ -107,12 +107,12 @@ jobs:
           git config --unset-all submodule.KernelSU-Next.url 2>/dev/null || true
           # Sourced settings
           source ${{ github.workspace }}/settings.sh
-          echo "=== Cloning KernelSU ($KSU_REPO - branch: ${KSU_BRANCH:-main}) ==="
-          git clone --depth=1 -b ${KSU_BRANCH:-main} ${KSU_REPO:-https://github.com/tiann/KernelSU.git} KernelSU-Next 2>/dev/null || \
-          git clone --depth=1 ${KSU_REPO:-https://github.com/tiann/KernelSU.git} KernelSU-Next
-          # Verify KernelSU was checked out
+          echo "=== Cloning ReSukiSU ($KSU_REPO - branch: ${KSU_BRANCH:-main}) ==="
+          git clone --depth=1 -b ${KSU_BRANCH:-main} ${KSU_REPO:-https://github.com/ReSukiSU/ReSukiSU.git} KernelSU-Next 2>/dev/null || \
+          git clone --depth=1 ${KSU_REPO:-https://github.com/ReSukiSU/ReSukiSU.git} KernelSU-Next
+          # Verify ReSukiSU was checked out
           if [ ! -f KernelSU-Next/kernel/Makefile ] && [ ! -f KernelSU-Next/kernel/Kbuild ]; then
-            echo "ERROR: KernelSU-Next failed to checkout!"
+            echo "ERROR: ReSukiSU failed to checkout!"
             exit 1
           fi
           # Ensure symlink exists
@@ -125,18 +125,7 @@ jobs:
           # Ensure Kconfig entry exists
           grep -q "drivers/kernelsu/Kconfig" drivers/Kconfig || \
             sed -i "/endmenu/i\source \"drivers/kernelsu/Kconfig\"" drivers/Kconfig
-          # Patch for kernel 4.19: cpus_allowed renamed to cpus_mask (if file exists)
-          if [ -f KernelSU-Next/kernel/selinux/rules.c ]; then
-            echo "=== Patching KernelSU for kernel 4.19 compat ==="
-            sed -i 's/&current->cpus_allowed);/\&current->cpus_mask);/g' \
-                KernelSU-Next/kernel/selinux/rules.c 2>/dev/null || true
-          fi
-          # Provide weak stub for ksu_handle_sys_reboot if needed by kernel source
-          if [ -f KernelSU-Next/kernel/ksu.c ]; then
-            grep -q "ksu_handle_sys_reboot" KernelSU-Next/kernel/ksu.c || \
-              printf "\nvoid __attribute__((weak)) ksu_handle_sys_reboot(int *cmd) { (void)cmd; }\n" >> KernelSU-Next/kernel/ksu.c
-          fi
-          echo "=== KernelSU-Next ready ==="
+          echo "=== ReSukiSU ready ==="
 
       - name: Setup ntsync
         run: |

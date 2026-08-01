@@ -56,12 +56,12 @@ clone_kernel() {
         # Remove stale KernelSU-Next submodule (commit fc33995 doesn't exist upstream)
         rm -rf KernelSU-Next
         git config --unset-all submodule.KernelSU-Next.url 2>/dev/null || true
-        # Clone KernelSU
-        echo "=== Cloning KernelSU ($KSU_REPO - branch: ${KSU_BRANCH:-main}) ==="
-        git clone --depth=1 -b ${KSU_BRANCH:-main} ${KSU_REPO:-https://github.com/tiann/KernelSU.git} KernelSU-Next 2>/dev/null || \
-        git clone --depth=1 ${KSU_REPO:-https://github.com/tiann/KernelSU.git} KernelSU-Next
+        # Clone ReSukiSU
+        echo "=== Cloning ReSukiSU ($KSU_REPO - branch: ${KSU_BRANCH:-main}) ==="
+        git clone --depth=1 -b ${KSU_BRANCH:-main} ${KSU_REPO:-https://github.com/ReSukiSU/ReSukiSU.git} KernelSU-Next 2>/dev/null || \
+        git clone --depth=1 ${KSU_REPO:-https://github.com/ReSukiSU/ReSukiSU.git} KernelSU-Next
         if [ ! -f KernelSU-Next/kernel/Makefile ] && [ ! -f KernelSU-Next/kernel/Kbuild ]; then
-            echo "ERROR: KernelSU-Next failed to checkout!"
+            echo "ERROR: ReSukiSU failed to checkout!"
             exit 1
         fi
         # Ensure symlink exists
@@ -74,18 +74,7 @@ clone_kernel() {
         # Ensure Kconfig entry exists
         grep -q "drivers/kernelsu/Kconfig" drivers/Kconfig || \
             sed -i "/endmenu/i\source \"drivers/kernelsu/Kconfig\"" drivers/Kconfig
-        # Patch for kernel 4.19: cpus_allowed renamed to cpus_mask (if file exists)
-        if [ -f KernelSU-Next/kernel/selinux/rules.c ]; then
-            echo "=== Patching KernelSU for kernel 4.19 compat ==="
-            sed -i 's/&current->cpus_allowed);/\&current->cpus_mask);/g' \
-                KernelSU-Next/kernel/selinux/rules.c 2>/dev/null || true
-        fi
-        # Provide weak stub for ksu_handle_sys_reboot if needed by kernel source
-        if [ -f KernelSU-Next/kernel/ksu.c ]; then
-            grep -q "ksu_handle_sys_reboot" KernelSU-Next/kernel/ksu.c || \
-                printf "\nvoid __attribute__((weak)) ksu_handle_sys_reboot(int *cmd) { (void)cmd; }\n" >> KernelSU-Next/kernel/ksu.c
-        fi
-        echo "=== KernelSU-Next ready ==="
+        echo "=== ReSukiSU ready ==="
         cd $KERNEL
     fi
 }
