@@ -117,8 +117,8 @@ jobs:
           fi
           # Ensure Makefile entry exists
           grep -q "kernelsu" drivers/Makefile || \
-            printf "\nobj-\$(CONFIG_KSU) += kernelsu/\n" >> drivers/Makefile
-          # Ensure Kconfig entry exists
+            printf "\nobj-$(CONFIG_KSU) += kernelsu/\n" >> drivers/Makefile
+          # Ensure Kconfig entry exists BEFORE defconfig so CONFIG_KSU is visible
           grep -q "drivers/kernelsu/Kconfig" drivers/Kconfig || \
             sed -i "/endmenu/i\source \"drivers/kernelsu/Kconfig\"" drivers/Kconfig
           # Patch for kernel 4.19: cpus_allowed renamed to cpus_mask (if needed)
@@ -156,7 +156,7 @@ jobs:
           echo "  -> include/uapi/linux/ntsync.h copied"
           # Add entry to drivers/misc/Makefile
           grep -q "CONFIG_NTSYNC" drivers/misc/Makefile || \
-            printf "obj-\$(CONFIG_NTSYNC)\t\t+= ntsync.o\n" >> drivers/misc/Makefile
+            printf "obj-$(CONFIG_NTSYNC)\t\t+= ntsync.o\n" >> drivers/misc/Makefile
           echo "  -> drivers/misc/Makefile patched"
           # Add Kconfig entry
           grep -q "config NTSYNC" drivers/misc/Kconfig || \

@@ -46,6 +46,7 @@ clone_kernel() {
         fi
         grep -q "kernelsu" drivers/Makefile || \
             printf "\nobj-\$(CONFIG_KSU) += kernelsu/\n" >> drivers/Makefile
+        # Ensure Kconfig entry exists BEFORE defconfig so CONFIG_KSU is visible
         grep -q "drivers/kernelsu/Kconfig" drivers/Kconfig || \
             sed -i "/endmenu/i\source \"drivers/kernelsu/Kconfig\"" drivers/Kconfig
         sed -i 's/&current->cpus_allowed);/\&current->cpus_mask);/g' \
