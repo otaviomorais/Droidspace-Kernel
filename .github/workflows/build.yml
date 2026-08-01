@@ -194,6 +194,9 @@ jobs:
           export PATH="${CLANG_BIN}:${{ github.workspace }}/toolchains/aarch64-linux-android-4.9/bin:${{ github.workspace }}/toolchains/arm-linux-androideabi-4.9/bin:$PATH"
           export ARCH=arm64
           export SUBARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-android-
+          export CROSS_COMPILE_ARM32=arm-linux-androideabi-
+          export CLANG_TRIPLE=aarch64-linux-gnu-
           export CC="ccache clang"
           export HOSTCC=gcc
           export LD=ld.lld
@@ -204,18 +207,24 @@ jobs:
           export OBJDUMP=llvm-objdump
           export STRIP=llvm-strip
           export LLVM=1
-          export LLVM_IAS=1
+          export LLVM_IAS=0
           export KBUILD_BUILD_USER=Droidspace
           export KBUILD_BUILD_HOST=github-actions
           echo "=== Verify tools ==="
           which ld.lld
           which clang
-          which llvm-ar
+          which aarch64-linux-android-gcc || true
+          which arm-linux-androideabi-gcc || true
           cd kernel_source
           make -j$(nproc) \
             O=out \
+            ARCH=arm64 \
+            SUBARCH=arm64 \
             CC="ccache clang" \
             HOSTCC=gcc \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-android- \
+            CROSS_COMPILE_ARM32=arm-linux-androideabi- \
             LD=ld.lld \
             AS=llvm-as \
             AR=llvm-ar \
@@ -224,13 +233,18 @@ jobs:
             OBJDUMP=llvm-objdump \
             STRIP=llvm-strip \
             LLVM=1 \
-            LLVM_IAS=1
+            LLVM_IAS=0
 
           echo "=== Build dtbo.img ==="
           make -j$(nproc) \
             O=out \
+            ARCH=arm64 \
+            SUBARCH=arm64 \
             CC="ccache clang" \
             HOSTCC=gcc \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-android- \
+            CROSS_COMPILE_ARM32=arm-linux-androideabi- \
             LD=ld.lld \
             AS=llvm-as \
             AR=llvm-ar \
@@ -239,7 +253,7 @@ jobs:
             OBJDUMP=llvm-objdump \
             STRIP=llvm-strip \
             LLVM=1 \
-            LLVM_IAS=1 \
+            LLVM_IAS=0 \
             dtbo.img 2>&1 || echo "dtbo.img target not available, skipping"
 
       - name: Package kernel
