@@ -38,6 +38,8 @@ jobs:
             libncurses-dev libssl-dev \
             p7zip-full ccache \
             lz4 xz-utils zlib1g-dev
+          sudo ln -sf /usr/lib/x86_64-linux-gnu/libtinfo.so.6 /usr/lib/x86_64-linux-gnu/libtinfo.so.5 2>/dev/null || true
+          sudo ln -sf /usr/lib/x86_64-linux-gnu/libncurses.so.6 /usr/lib/x86_64-linux-gnu/libncurses.so.5 2>/dev/null || true
 
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2
@@ -125,12 +127,12 @@ jobs:
           export SUBARCH=arm64
           cd kernel_source
           # Generate base config
-          make O=out ARCH=arm64 vendor/alioth_defconfig || make O=out ARCH=arm64 alioth_defconfig
+          make O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 vendor/alioth_defconfig || make O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 alioth_defconfig
           # Merge config fragments
           scripts/kconfig/merge_config.sh -O out \
             out/.config \
             arch/arm64/configs/vendor/xiaomi/droidspaces.config
-          make O=out ARCH=arm64 olddefconfig
+          make O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 olddefconfig
           # Verify KSU is enabled
           grep -q "CONFIG_KSU=y" out/.config && echo "KSU enabled: YES" || echo "WARNING: KSU not enabled!"
           # Verify ntsync is enabled
@@ -151,11 +153,8 @@ jobs:
             CC=clang \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-            AR=llvm-ar \
-            NM=llvm-nm \
-            OBJCOPY=llvm-objcopy \
-            OBJDUMP=llvm-objdump \
-            STRIP=llvm-strip
+            LLVM=1 \
+            LLVM_IAS=1
 
           echo "=== Build dtbo.img ==="
           make -j$(nproc) \
@@ -165,11 +164,8 @@ jobs:
             CC=clang \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-            AR=llvm-ar \
-            NM=llvm-nm \
-            OBJCOPY=llvm-objcopy \
-            OBJDUMP=llvm-objdump \
-            STRIP=llvm-strip \
+            LLVM=1 \
+            LLVM_IAS=1 \
             dtbo.img 2>&1 || echo "dtbo.img target not available, skipping"
 
       - name: Package kernel
