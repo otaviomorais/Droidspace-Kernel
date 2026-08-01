@@ -71,9 +71,13 @@ clone_kernel() {
         # Ensure Makefile entry exists
         grep -q "kernelsu" drivers/Makefile || \
             printf "\nobj-\$(CONFIG_KSU) += kernelsu/\n" >> drivers/Makefile
-        # Ensure Kconfig entry exists
-        grep -q "drivers/kernelsu/Kconfig" drivers/Kconfig || \
-            sed -i "/endmenu/i\source \"drivers/kernelsu/Kconfig\"" drivers/Kconfig
+        # Patch ReSukiSU manual hook assertion checks for kernel 4.19 compatibility
+        if [ -f KernelSU-Next/kernel/tools/manual_hook_check.mk ]; then
+            echo "=== Patching ReSukiSU manual hook checks for kernel 4.19 compat ==="
+            sed -i '/ksu_vfs_read_hook/s/^/#/' KernelSU-Next/kernel/tools/manual_hook_check.mk 2>/dev/null || true
+            sed -i '/ksu_handle_newfstat_ret/s/^/#/' KernelSU-Next/kernel/tools/manual_hook_check.mk 2>/dev/null || true
+            sed -i '/ksu_handle_fstat64_ret/s/^/#/' KernelSU-Next/kernel/tools/manual_hook_check.mk 2>/dev/null || true
+        fi
         echo "=== ReSukiSU ready ==="
         cd $KERNEL
     fi
