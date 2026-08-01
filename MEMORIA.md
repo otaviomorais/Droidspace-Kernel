@@ -63,8 +63,8 @@ CONFIG_KSU_SUSFS_ENABLE_LOG=y
 
 * **Arquivo de Workflow:** `.github/workflows/build.yml`
 * **Gatilho:** `push` na branch `main` e `workflow_dispatch`.
-* **Status da Última Compilação:** 🟢 **Run #51 (`30705676407`) - Concluído com Sucesso**.
-* **Artefato Gerado:** `Droidspace-alioth-v1.5.0.zip` (instalável via TWRP / OrangeFox).
+* **Status da Última Compilação:** 🟢 **Run #53 (`30707842587`) - Concluído com Sucesso**.
+* **Artefato Gerado:** `Droidspace-alioth-v1.0.0-2026-08-01_16-28-34.zip` (instalável via TWRP / OrangeFox).
 
 ---
 
