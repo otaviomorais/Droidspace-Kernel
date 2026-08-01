@@ -11,7 +11,7 @@
 * **Dispositivo Alvo:** Xiaomi POCO F3 / Redmi K40 / Mi 11X (`alioth` - Qualcomm Snapdragon 865 - SM8250).
 * **Kernel Base:** `TIMISONG-dev/kernel_xiaomi_sm8250` (branch: `magictime-new` - Linux 4.19).
 * **Toolchain de Compilação:** `ZyCromerZ/Clang-20` (LLVM 20.0.0git) + prebuilt GCC 4.9 cross-compilers (`aarch64-linux-android-4.9` / `arm-linux-androideabi-4.9`).
-* **Motor Root & Root Concealment:** **KernelSU-Next (`v3.2.0-legacy`) + SUSFS v1.5.5 (Kernel VFS Anti-Detection)**.
+* **Motor Root & Root Concealment:** **rsuntk/KernelSU (`main`) + SUSFS v1.5.5 (Kernel VFS Anti-Detection)**.
 * **Driver de Sincronização:** **ntsync** (`/dev/ntsync` com permissões `0666` nativas para Wine/Proton/emuladores).
 * **Gerenciamento de Memória:** **ZRAM de 6GB com algoritmo ZSTD + MGLRU (Multi-Generational LRU)**.
 * **Frequência de Timer:** **1000Hz Timer Tick (`CONFIG_HZ_1000=y`)** para menor latência ao toque e emulação.
@@ -21,8 +21,8 @@
 
 ## 🛡️ 2. Motor Root & SUSFS Anti-Detection
 
-### 2.1 Por que KernelSU-Next + SUSFS?
-* **KernelSU-Next (`v3.2.0-legacy`):** Possui suporte oficial e nativo para kernels **Non-GKI Linux 4.19** via `kprobes` (`CONFIG_KPROBES=y`).
+### 2.1 Por que rsuntk/KernelSU + SUSFS?
+* **rsuntk/KernelSU (`main`):** Fork ativamente mantido do KernelSU especificamente focado em suporte a kernels **Non-GKI Linux 4.19**, estabilidade do daemon `ksud`, suporte completo a permissões SELinux para Zygisk Next e integração de hooks de VFS. Resolveu as falhas de conexão de serviço do `zygisksu` (`Could not connect to service!`) enfrentadas no KernelSU-Next legacy.
 * **SUSFS (Kernel Stealth Mount System):** Aplica patches na camada de VFS (Virtual File System) do Linux (`fs/susfs.c`, `include/linux/susfs.h`, `50_add_susfs_in_kernel-4.19.patch`).
 * **Ocultação Inquebrável de Root:** O SUSFS oculta todas as tabelas de montagem (`/proc/self/mounts`, `/proc/self/mountinfo`), pastas de módulos e rastros do KernelSU de qualquer varredura em espaço de usuário, garantindo compatibilidade total com **bancos (Nubank, Itaú, Bradesco, etc.), carteiras e Play Integrity**.
 

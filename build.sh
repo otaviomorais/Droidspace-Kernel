@@ -37,9 +37,9 @@ clone_kernel() {
         cd $KERNEL_SOURCE
         rm -rf KernelSU-Next
         git config --unset-all submodule.KernelSU-Next.url 2>/dev/null || true
-        echo "=== Cloning KernelSU-Next v3.2.0-legacy ==="
-        git clone --depth=1 --branch v3.2.0-legacy \
-            https://github.com/KernelSU-Next/KernelSU-Next.git \
+        echo "=== Cloning rsuntk/KernelSU (main) ==="
+        git clone --depth=1 \
+            https://github.com/rsuntk/KernelSU.git \
             KernelSU-Next
         if [ ! -L drivers/kernelsu ]; then
             ln -sf ../KernelSU-Next/kernel drivers/kernelsu
@@ -50,7 +50,7 @@ clone_kernel() {
             sed -i "/endmenu/i\source \"drivers/kernelsu/Kconfig\"" drivers/Kconfig
         sed -i 's/&current->cpus_allowed);/\&current->cpus_mask);/g' \
             KernelSU-Next/kernel/selinux/rules.c 2>/dev/null || true
-        echo "=== KernelSU-Next v3.2.0-legacy ready ==="
+        echo "=== rsuntk/KernelSU ready ==="
         cd $KERNEL
     fi
 }
