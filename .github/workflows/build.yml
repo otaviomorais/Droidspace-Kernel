@@ -6,14 +6,11 @@ on:
       version:
         description: 'Kernel version'
         required: false
-        default: '1.5.0'
-      release_desc:
+        default: '1.1.0'
+      description:
         description: 'Release description'
         required: false
-        default: 'Droidspace Kernel v1.5.0 for Poco F3 (alioth) with ReSukiSU (Manual Hook + Multi-Manager) + NTSYNC + MGLRU + 1000Hz + 6GB ZRAM ZSTD'
-  push:
-    branches:
-      - main
+        default: 'Droidspace Kernel for Poco F3 (alioth) with DroidSpaces + ntsync support'
 
 permissions:
   contents: write
@@ -38,8 +35,6 @@ jobs:
             libncurses-dev libssl-dev \
             p7zip-full ccache \
             lz4 xz-utils zlib1g-dev
-          sudo ln -sf /usr/lib/x86_64-linux-gnu/libtinfo.so.6 /usr/lib/x86_64-linux-gnu/libtinfo.so.5 2>/dev/null || true
-          sudo ln -sf /usr/lib/x86_64-linux-gnu/libncurses.so.6 /usr/lib/x86_64-linux-gnu/libncurses.so.5 2>/dev/null || true
 
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1.2
@@ -47,39 +42,91 @@ jobs:
           key: ${{ runner.os }}-kernel-ccache
           max-size: 10G
 
-      - name: Setup Proton Clang toolchain
+      - name: Download Clang toolchain
         run: |
-          mkdir -p toolchains
-          echo "=== Downloading Proton Clang 13 ==="
-          git clone --depth=1 https://github.com/kdrag0n/proton-clang toolchains/proton-clang
-          echo "=== Verify Proton Clang ==="
-          "${{ github.workspace }}/toolchains/proton-clang/bin/clang" --version
+          mkdir -p toolchains/clang
+          wget -q -O /tmp/clang.tar.gz \
+            "https://github.com/ZyCromerZ/Clang/releases/download/20.0.0git-20250129-release/Clang-20.0.0git-20250129.tar.gz"
+          tar -zxf /tmp/clang.tar.gz -C toolchains/clang
+          rm -f /tmp/clang.tar.gz
+          echo "=== Structure ==="
+          ls toolchains/clang/
+          echo "=== bin/ exists? ==="
+          ls toolchains/clang/bin/ 2>/dev/null | head -5 || echo "No bin/ directory"
+          echo "=== ld.lld locations ==="
+          find toolchains/clang -name 'ld.lld' 2>/dev/null
+          find toolchains/clang -name 'lld' -type f 2>/dev/null
+          echo "=== Clang version ==="
+          find toolchains/clang -name 'clang' -type f -executable | head -1 | xargs {} --version 2>/dev/null | head -1 || true
+
+      - name: Fix toolchain paths
+        run: |
+          CLANG_DIR="${{ github.workspace }}/toolchains/clang"
+
+          if [ -d "${CLANG_DIR}/bin" ]; then
+            echo "tarball has bin/ dir, using as-is"
+            CLANG_BIN="${CLANG_DIR}/bin"
+          else
+            echo "tarball has no bin/ dir, creating one with symlinks"
+            mkdir -p "${CLANG_DIR}/bin"
+            for f in "${CLANG_DIR}"/*; do
+              if [ -f "$f" ] && [ -x "$f" ]; then
+                ln -sf "$f" "${CLANG_DIR}/bin/$(basename "$f")"
+              fi
+            done
+            CLANG_BIN="${CLANG_DIR}/bin"
+          fi
+
+          echo "=== Clang bin contents ==="
+          ls "${CLANG_BIN}/" | grep -E 'clang|ld\.lld|lld|ar|nm|objcopy|objdump|strip|as|readelf' || true
+          echo "=== Verify ld.lld ==="
+          "${CLANG_BIN}/ld.lld" --version 2>&1 | head -1 || echo "ld.lld not executable"
+          echo "=== Verify clang ==="
+          "${CLANG_BIN}/clang" --version 2>&1 | head -1 || echo "clang not found"
+
+      - name: Download GCC toolchains
+        run: |
+          git clone --depth=1 \
+            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 \
+            toolchains/arm-linux-androideabi-4.9
+          git clone --depth=1 \
+            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 \
+            toolchains/aarch64-linux-android-4.9
 
       - name: Clone kernel source
         run: |
-          source ${{ github.workspace }}/settings.sh
-          git clone --depth=1 --recursive -b ${KERNEL_BRANCH:-lineage-sunflower} \
-            ${KERNEL_REPO:-https://github.com/starscroch/kernel_xiaomi_sm8250.git} \
+          git clone --depth=1 -b magictime-new \
+            https://github.com/TIMISONG-dev/kernel_xiaomi_sm8250.git \
             kernel_source
           cd kernel_source
-          git submodule update --init --recursive 2>/dev/null || true
-          if [ ! -f KernelSU/kernel/Makefile ]; then
-            echo "=== Submodule empty, cloning ReSukiSU directly ==="
-            rm -rf KernelSU
-            git clone --depth=1 https://github.com/ReSukiSU/ReSukiSU.git KernelSU
+          # Remove stale KernelSU-Next submodule (commit fc33995 doesn't exist upstream)
+          rm -rf KernelSU-Next
+          git config --unset-all submodule.KernelSU-Next.url 2>/dev/null || true
+          # Clone KernelSU-Next v3.2.0-legacy (v3.3.0 requer APIs 5.10+; SM8250 é 4.19)
+          echo "=== Cloning KernelSU-Next v3.2.0-legacy ==="
+          git clone --depth=1 --branch v3.2.0-legacy \
+            https://github.com/KernelSU-Next/KernelSU-Next.git \
+            KernelSU-Next
+          # Verify KernelSU-Next was checked out
+          if [ ! -f KernelSU-Next/kernel/Kbuild ]; then
+            echo "ERROR: KernelSU-Next failed to checkout!"
+            exit 1
           fi
+          # Ensure symlink exists (upstream has it, but verify)
           if [ ! -L drivers/kernelsu ]; then
-            ln -sf ../KernelSU/kernel drivers/kernelsu
+            ln -sf ../KernelSU-Next/kernel drivers/kernelsu
           fi
-          # Fix empty obj-y on line 88 in starscroch drivers/Makefile and add KSU
-          sed -i 's/^obj-y[ \t]*$/obj-$(CONFIG_KSU) += kernelsu\//' drivers/Makefile
+          # Ensure Makefile entry exists
           grep -q "kernelsu" drivers/Makefile || \
             printf "\nobj-\$(CONFIG_KSU) += kernelsu/\n" >> drivers/Makefile
-          if [ -f KernelSU/kernel/tools/manual_hook_check.mk ]; then
-            echo "=== Disabling ReSukiSU manual hook assertion checks ==="
-            echo "" > KernelSU/kernel/tools/manual_hook_check.mk
-          fi
-          echo "=== ReSukiSU ready ==="
+          # Ensure Kconfig entry exists
+          grep -q "drivers/kernelsu/Kconfig" drivers/Kconfig || \
+            sed -i "/endmenu/i\source \"drivers/kernelsu/Kconfig\"" drivers/Kconfig
+          # Patch for kernel 4.19: cpus_allowed renamed to cpus_mask
+          echo "=== Patching KernelSU-Next for kernel 4.19 compat ==="
+          sed -i 's/&current->cpus_allowed);/\&current->cpus_mask);/g' \
+              KernelSU-Next/kernel/selinux/rules.c
+          echo "=== KernelSU-Next v3.2.0-legacy ready ==="
 
       - name: Setup ntsync
         run: |
@@ -105,13 +152,6 @@ jobs:
           git clone --depth=1 \
             https://github.com/TIMISONG-dev/MagicTime-alioth.git \
             AnyKernel
-          echo "=== Patching AnyKernel for 6GB ZRAM & Overlay ==="
-          mkdir -p AnyKernel/ramdisk/overlay.d
-          printf 'on property:sys.boot_completed=1\n    exec - root root -- /system/bin/sh -c "if [ $(cat /sys/block/zram0/disksize 2>/dev/null || echo 0) -lt 6442450944 ]; then swapoff /dev/block/zram0 2>/dev/null; echo 1 > /sys/block/zram0/reset 2>/dev/null; echo 6442450944 > /sys/block/zram0/disksize 2>/dev/null; mkswap /dev/block/zram0 2>/dev/null; swapon /dev/block/zram0 -p 32767 2>/dev/null; fi"\n' > AnyKernel/ramdisk/overlay.d/init.zram.rc
-          if [ -f AnyKernel/anykernel.sh ]; then
-            grep -q "Patching ZRAM size to 6GB" AnyKernel/anykernel.sh || \
-              printf '\n# Patch fstab for 6GB ZRAM\nui_print "Patching ZRAM size to 6GB (6442450944 bytes)...";\nfor fstab in $ramdisk/fstab* $ramdisk/etc/fstab* $ramdisk/vendor/etc/fstab* /vendor/etc/fstab* /system/etc/fstab*; do\n  if [ -f "$fstab" ] && grep -q "zram" "$fstab"; then\n    sed -i -E "s/zramsize=[0-9%%]+/zramsize=6442450944/g" "$fstab" 2>/dev/null || true;\n  fi;\ndone;\n' >> AnyKernel/anykernel.sh
-          fi
 
       - name: Install kernel config
         run: |
@@ -121,17 +161,24 @@ jobs:
 
       - name: Configure kernel
         run: |
-          export PATH="${{ github.workspace }}/toolchains/proton-clang/bin:$PATH"
+          CLANG_DIR="${{ github.workspace }}/toolchains/clang"
+          if [ -d "${CLANG_DIR}/bin" ] && [ -f "${CLANG_DIR}/bin/clang" ]; then
+            CLANG_BIN="${CLANG_DIR}/bin"
+          else
+            CLANG_BIN="${CLANG_DIR}"
+          fi
+          export PATH="${CLANG_BIN}:${{ github.workspace }}/toolchains/aarch64-linux-android-4.9/bin:${{ github.workspace }}/toolchains/arm-linux-androideabi-4.9/bin:$PATH"
           export ARCH=arm64
           export SUBARCH=arm64
           cd kernel_source
           # Generate base config
-          make O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 vendor/alioth_defconfig || make O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 alioth_defconfig
+          make O=out alioth_defconfig
           # Merge config fragments
           scripts/kconfig/merge_config.sh -O out \
             out/.config \
+            arch/arm64/configs/vendor/xiaomi/magictime-common.config \
             arch/arm64/configs/vendor/xiaomi/droidspaces.config
-          make O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 olddefconfig
+          make O=out olddefconfig
           # Verify KSU is enabled
           grep -q "CONFIG_KSU=y" out/.config && echo "KSU enabled: YES" || echo "WARNING: KSU not enabled!"
           # Verify ntsync is enabled
@@ -139,30 +186,59 @@ jobs:
 
       - name: Build kernel
         run: |
-          export PATH="${{ github.workspace }}/toolchains/proton-clang/bin:$PATH"
+          CLANG_DIR="${{ github.workspace }}/toolchains/clang"
+          if [ -d "${CLANG_DIR}/bin" ] && [ -f "${CLANG_DIR}/bin/clang" ]; then
+            CLANG_BIN="${CLANG_DIR}/bin"
+          else
+            CLANG_BIN="${CLANG_DIR}"
+          fi
+          export PATH="${CLANG_BIN}:${{ github.workspace }}/toolchains/aarch64-linux-android-4.9/bin:${{ github.workspace }}/toolchains/arm-linux-androideabi-4.9/bin:$PATH"
           export ARCH=arm64
           export SUBARCH=arm64
+          export CC="ccache clang"
+          export HOSTCC=gcc
+          export LD=ld.lld
+          export AS=llvm-as
+          export AR=llvm-ar
+          export NM=llvm-nm
+          export OBJCOPY=llvm-objcopy
+          export OBJDUMP=llvm-objdump
+          export STRIP=llvm-strip
+          export LLVM=1
+          export LLVM_IAS=1
           export KBUILD_BUILD_USER=Droidspace
           export KBUILD_BUILD_HOST=github-actions
+          echo "=== Verify tools ==="
+          which ld.lld
+          which clang
+          which llvm-ar
           cd kernel_source
           make -j$(nproc) \
             O=out \
-            ARCH=arm64 \
-            SUBARCH=arm64 \
-            CC=clang \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            CC="ccache clang" \
+            HOSTCC=gcc \
+            LD=ld.lld \
+            AS=llvm-as \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
             LLVM=1 \
             LLVM_IAS=1
 
           echo "=== Build dtbo.img ==="
           make -j$(nproc) \
             O=out \
-            ARCH=arm64 \
-            SUBARCH=arm64 \
-            CC=clang \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            CC="ccache clang" \
+            HOSTCC=gcc \
+            LD=ld.lld \
+            AS=llvm-as \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
             LLVM=1 \
             LLVM_IAS=1 \
             dtbo.img 2>&1 || echo "dtbo.img target not available, skipping"
@@ -193,15 +269,10 @@ jobs:
           cd AnyKernel
           rm -f *.zip
           BUILD_DATE=$(date '+%Y-%m-%d_%H-%M-%S')
-          source "${{ github.workspace }}/settings.sh"
-          VER="${{ inputs.version }}"
-          if [ -z "$VER" ]; then VER="$VERSION"; fi
-          if [ -z "$VER" ]; then VER="1.4.0"; fi
-          ZIP_NAME="Droidspace-alioth-v${VER}-${BUILD_DATE}.zip"
+          ZIP_NAME="Droidspace-alioth-v${{ inputs.version || '1.0.0' }}-${BUILD_DATE}.zip"
           7z a -mx9 "$ZIP_NAME" * -x!*.zip
           cp "$ZIP_NAME" "${{ github.workspace }}/"
           echo "zip_name=$ZIP_NAME" >> "$GITHUB_OUTPUT"
-          echo "version=$VER" >> "$GITHUB_OUTPUT"
           echo "Package created: $ZIP_NAME"
 
       - name: Upload artifact
@@ -214,11 +285,10 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.package.outputs.version }}
-          name: "Droidspace Kernel v${{ steps.package.outputs.version }}"
+          tag_name: v${{ inputs.version || '1.0.0' }}
+          name: "Droidspace Kernel v${{ inputs.version || '1.0.0' }}"
           body: |
-            ## Droidspace Kernel v${{ steps.package.outputs.version }}
-
+            ## Droidspace Kernel v${{ inputs.version || '1.0.0' }}
 
             **Device:** POCO F3 (alioth)
             **Base:** MagicTime Kernel (TIMISONG-dev)
@@ -239,7 +309,7 @@ jobs:
               - Westwood TCP congestion
               - ntsync (NT synchronization primitives for Wine/Proton)
 
-            ${{ inputs.release_desc || 'Droidspace Kernel for Poco F3 (alioth) with DroidSpaces support' }}
+            ${{ inputs.description || 'Droidspace Kernel for Poco F3 (alioth) with DroidSpaces support' }}
           files: "*.zip"
           make_latest: true
         env:
