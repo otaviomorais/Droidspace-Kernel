@@ -9,13 +9,14 @@
 
 ## 1. Resumo das Modificações Realizadas (Release v1.5.0 - Clean Build)
 
-### A) Implementação e Migração Completa para ReSukiSU (`ReSukiSU/ReSukiSU`)
-* **Motivo:** O repositório da árvore do kernel (`TIMISONG-dev/kernel_xiaomi_sm8250`) exige chamadas diretas a hooks manuais (`ksu_handle_execveat`, `ksu_handle_faccessat`, `ksu_handle_stat`, etc.) típicos de kernels Linux 4.19 Não-GKI (`alioth`).
-* **Solução:** Migração completa para a árvore **ReSukiSU (`ReSukiSU/ReSukiSU`)** com suporte nativo a `CONFIG_KSU_MANUAL_HOOK=y` e `CONFIG_KSU_MULTI_MANAGER_SUPPORT=y`.
-* **Vantagens do ReSukiSU:**
-  1. Suporte ativo a Manual Hooks para kernels Linux 3.4+ a 4.19 Não-GKI.
-  2. Suporte a Multi-Manager (funciona perfeitamente com KernelSU Manager oficial, ReSukiSU Manager, RKSU, MKSU e SukiSU).
-  3. Suporte a Metamodules, App Profiles e compatibilidade aprimorada com Android 14+.
+### A) Migração de Base do Kernel para `starscroch/kernel_xiaomi_sm8250` (`lineage-sunflower`)
+* **Motivo:** A árvore `starscroch/kernel_xiaomi_sm8250` (base LineageOS-CLO) já possui o ReSukiSU e o NoMount integrados nativamente com todos os hooks manuais do SELinux (`sel_handle_status_ops`) e VFS já aplicados no código-fonte, além de otimizações pesadas de debloat e alocação de RAM.
+* **Solução:** Migração para a nova base `starscroch/kernel_xiaomi_sm8250` (branch `lineage-sunflower`), mantendo todos os recursos do Droidspace (NTSYNC `/dev/ntsync` 0666, Namespaces, CGroups, OverlayFS, MGLRU, 1000Hz Timer Tick e ZRAM ZSTD 6.44GB).
+* **Recursos do Kernel `starscroch`:**
+  1. ReSukiSU integrado nativamente como submódulo.
+  2. Suporte a NoMount (`CONFIG_NOMOUNT=y`).
+  3. `min_free_kbytes` fixado em 32MB e Watermark Boosting desativado para evitar travamentos de RAM.
+  4. Debloat completo (remoção do Qualcomm DCC v2, QCOM Logging e ajuste do GPU idle timeout para 58ms).
 
 ### B) Multi-Generational LRU (MGLRU) & Timer Tick 1000Hz
 * **MGLRU (`CONFIG_LRU_GEN=y`):** Melhora o gerenciamento de memória RAM e previne congelamentos durante uso de containers (Winlator/Ludashi) e jogos.
@@ -37,4 +38,4 @@
 ---
 
 ## 3. Notas de Diagnóstico (01/08/2026)
-* **Compatibilidade 4.19 Não-GKI:** `ReSukiSU` resolveu com precisão todos os símbolos de hooks manuais (`ksu_handle_*`) exigidos pela árvore do kernel `sm8250`.
+* **Base `starscroch` (`lineage-sunflower`):** ReSukiSU + NoMount nativos + NTSYNC ativado com sucesso.

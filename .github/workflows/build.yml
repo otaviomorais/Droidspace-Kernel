@@ -98,40 +98,22 @@ jobs:
 
       - name: Clone kernel source
         run: |
-          git clone --depth=1 -b magictime-new \
-            https://github.com/TIMISONG-dev/kernel_xiaomi_sm8250.git \
+          source ${{ github.workspace }}/settings.sh
+          git clone --depth=1 --recursive -b ${KERNEL_BRANCH:-lineage-sunflower} \
+            ${KERNEL_REPO:-https://github.com/starscroch/kernel_xiaomi_sm8250.git} \
             kernel_source
           cd kernel_source
-          # Remove stale KernelSU-Next submodule (commit fc33995 doesn't exist upstream)
-          rm -rf KernelSU-Next
-          git config --unset-all submodule.KernelSU-Next.url 2>/dev/null || true
-          # Sourced settings
-          source ${{ github.workspace }}/settings.sh
-          echo "=== Cloning ReSukiSU ($KSU_REPO - branch: ${KSU_BRANCH:-main}) ==="
-          git clone --depth=1 -b ${KSU_BRANCH:-main} ${KSU_REPO:-https://github.com/ReSukiSU/ReSukiSU.git} KernelSU-Next 2>/dev/null || \
-          git clone --depth=1 ${KSU_REPO:-https://github.com/ReSukiSU/ReSukiSU.git} KernelSU-Next
-          # Verify ReSukiSU was checked out
-          if [ ! -f KernelSU-Next/kernel/Makefile ] && [ ! -f KernelSU-Next/kernel/Kbuild ]; then
-            echo "ERROR: ReSukiSU failed to checkout!"
-            exit 1
+          git submodule update --init --recursive 2>/dev/null || true
+          if [ ! -f KernelSU/kernel/Makefile ]; then
+            echo "=== Submodule empty, cloning ReSukiSU directly ==="
+            rm -rf KernelSU
+            git clone --depth=1 https://github.com/ReSukiSU/ReSukiSU.git KernelSU
           fi
-          # Ensure symlink exists
           if [ ! -L drivers/kernelsu ]; then
-            ln -sf ../KernelSU-Next/kernel drivers/kernelsu
+            ln -sf ../KernelSU/kernel drivers/kernelsu
           fi
-          # Ensure Makefile entry exists
           grep -q "kernelsu" drivers/Makefile || \
             printf "\nobj-\$(CONFIG_KSU) += kernelsu/\n" >> drivers/Makefile
-          # Ensure Kconfig entry exists
-          grep -q "drivers/kernelsu/Kconfig" drivers/Kconfig || \
-            sed -i "/endmenu/i\source \"drivers/kernelsu/Kconfig\"" drivers/Kconfig
-          # Patch ReSukiSU manual hook assertion checks for kernel 4.19 compatibility
-          if [ -f KernelSU-Next/kernel/tools/manual_hook_check.mk ]; then
-            echo "=== Patching ReSukiSU manual hook checks for kernel 4.19 compat ==="
-            sed -i '/ksu_vfs_read_hook/s/^/#/' KernelSU-Next/kernel/tools/manual_hook_check.mk 2>/dev/null || true
-            sed -i '/ksu_handle_newfstat_ret/s/^/#/' KernelSU-Next/kernel/tools/manual_hook_check.mk 2>/dev/null || true
-            sed -i '/ksu_handle_fstat64_ret/s/^/#/' KernelSU-Next/kernel/tools/manual_hook_check.mk 2>/dev/null || true
-          fi
           echo "=== ReSukiSU ready ==="
 
       - name: Setup ntsync
@@ -185,11 +167,10 @@ jobs:
           export SUBARCH=arm64
           cd kernel_source
           # Generate base config
-          make O=out alioth_defconfig
+          make O=out vendor/alioth_defconfig || make O=out alioth_defconfig
           # Merge config fragments
           scripts/kconfig/merge_config.sh -O out \
             out/.config \
-            arch/arm64/configs/vendor/xiaomi/magictime-common.config \
             arch/arm64/configs/vendor/xiaomi/droidspaces.config
           make O=out olddefconfig
           # Verify KSU is enabled

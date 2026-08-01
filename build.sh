@@ -17,8 +17,8 @@ GCC_AARCH64=$KERNEL/toolchains/aarch64-linux-android-4.9
 CLANG_LINK="https://github.com/ZyCromerZ/Clang/releases/download/20.0.0git-20250129-release/Clang-20.0.0git-20250129.tar.gz"
 GCC_ARM_LINK="https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9"
 GCC_AARCH64_LINK="https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9"
-KERNEL_REPO="https://github.com/TIMISONG-dev/kernel_xiaomi_sm8250.git"
-KERNEL_BRANCH="magictime-new"
+KERNEL_REPO="https://github.com/starscroch/kernel_xiaomi_sm8250.git"
+KERNEL_BRANCH="lineage-sunflower"
 ANYKERNEL_LINK="https://github.com/TIMISONG-dev/MagicTime-alioth"
 ANYKERNEL_DIR=$KERNEL/AnyKernel
 
@@ -49,35 +49,21 @@ setup_toolchains() {
 }
 
 clone_kernel() {
-    echo "=== Cloning kernel source ==="
+    echo "=== Cloning kernel source (${KERNEL_REPO} - branch: ${KERNEL_BRANCH}) ==="
     if [ ! -d $KERNEL_SOURCE ]; then
-        git clone --depth=1 -b $KERNEL_BRANCH $KERNEL_REPO $KERNEL_SOURCE
+        git clone --depth=1 --recursive -b $KERNEL_BRANCH $KERNEL_REPO $KERNEL_SOURCE
         cd $KERNEL_SOURCE
-        # Remove stale KernelSU-Next submodule (commit fc33995 doesn't exist upstream)
-        rm -rf KernelSU-Next
-        git config --unset-all submodule.KernelSU-Next.url 2>/dev/null || true
-        # Clone ReSukiSU
-        echo "=== Cloning ReSukiSU ($KSU_REPO - branch: ${KSU_BRANCH:-main}) ==="
-        git clone --depth=1 -b ${KSU_BRANCH:-main} ${KSU_REPO:-https://github.com/ReSukiSU/ReSukiSU.git} KernelSU-Next 2>/dev/null || \
-        git clone --depth=1 ${KSU_REPO:-https://github.com/ReSukiSU/ReSukiSU.git} KernelSU-Next
-        if [ ! -f KernelSU-Next/kernel/Makefile ] && [ ! -f KernelSU-Next/kernel/Kbuild ]; then
-            echo "ERROR: ReSukiSU failed to checkout!"
-            exit 1
+        git submodule update --init --recursive 2>/dev/null || true
+        if [ ! -f KernelSU/kernel/Makefile ]; then
+            echo "=== Submodule empty, cloning ReSukiSU directly ==="
+            rm -rf KernelSU
+            git clone --depth=1 https://github.com/ReSukiSU/ReSukiSU.git KernelSU
         fi
-        # Ensure symlink exists
         if [ ! -L drivers/kernelsu ]; then
-            ln -sf ../KernelSU-Next/kernel drivers/kernelsu
+            ln -sf ../KernelSU/kernel drivers/kernelsu
         fi
-        # Ensure Makefile entry exists
         grep -q "kernelsu" drivers/Makefile || \
             printf "\nobj-\$(CONFIG_KSU) += kernelsu/\n" >> drivers/Makefile
-        # Patch ReSukiSU manual hook assertion checks for kernel 4.19 compatibility
-        if [ -f KernelSU-Next/kernel/tools/manual_hook_check.mk ]; then
-            echo "=== Patching ReSukiSU manual hook checks for kernel 4.19 compat ==="
-            sed -i '/ksu_vfs_read_hook/s/^/#/' KernelSU-Next/kernel/tools/manual_hook_check.mk 2>/dev/null || true
-            sed -i '/ksu_handle_newfstat_ret/s/^/#/' KernelSU-Next/kernel/tools/manual_hook_check.mk 2>/dev/null || true
-            sed -i '/ksu_handle_fstat64_ret/s/^/#/' KernelSU-Next/kernel/tools/manual_hook_check.mk 2>/dev/null || true
-        fi
         echo "=== ReSukiSU ready ==="
         cd $KERNEL
     fi
@@ -165,11 +151,10 @@ build() {
     cp $KERNEL/configs/droidspaces.config arch/arm64/configs/vendor/xiaomi/droidspaces.config
 
     echo "=== Configuring kernel ==="
-    make O="$OUT" ${DEVICE}_defconfig 2>&1 | tee ../build_config.log
+    make O="$OUT" vendor/alioth_defconfig 2>&1 | tee ../build_config.log || make O="$OUT" alioth_defconfig 2>&1 | tee ../build_config.log
     # Merge config fragments properly
     scripts/kconfig/merge_config.sh -O "$OUT" \
         "$OUT/.config" \
-        arch/arm64/configs/vendor/xiaomi/magictime-common.config \
         arch/arm64/configs/vendor/xiaomi/droidspaces.config 2>&1 | tee -a ../build_config.log
     make O="$OUT" olddefconfig 2>&1 | tee -a ../build_config.log
     # Verify KSU is enabled
