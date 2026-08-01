@@ -128,6 +128,24 @@ jobs:
               KernelSU-Next/kernel/selinux/rules.c
           echo "=== KernelSU-Next v3.2.0-legacy ready ==="
 
+      - name: Setup SUSFS anti-detection
+        run: |
+          echo "=== Cloning susfs4ksu kernel-4.19 patches ==="
+          git clone --depth=1 -b kernel-4.19 https://gitlab.com/simonpunk/susfs4ksu.git toolchains/susfs4ksu 2>/dev/null || \
+            git clone --depth=1 https://github.com/sidex15/susfs4ksu.git toolchains/susfs4ksu 2>/dev/null || true
+          if [ -d "${{ github.workspace }}/toolchains/susfs4ksu/kernel_patches" ]; then
+            echo "=== Copying SUSFS files into kernel source ==="
+            cp -r ${{ github.workspace }}/toolchains/susfs4ksu/kernel_patches/include/linux/susfs*.h kernel_source/include/linux/ 2>/dev/null || true
+            cp ${{ github.workspace }}/toolchains/susfs4ksu/kernel_patches/fs/susfs.c kernel_source/fs/ 2>/dev/null || true
+            cd kernel_source
+            echo "=== Patching Linux 4.19 VFS for SUSFS ==="
+            patch -p1 < ${{ github.workspace }}/toolchains/susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.19.patch 2>/dev/null || true
+            if [ -f ${{ github.workspace }}/toolchains/susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch ]; then
+              patch -p1 -d drivers/kernelsu < ${{ github.workspace }}/toolchains/susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch 2>/dev/null || true
+            fi
+            echo "=== SUSFS patched successfully ==="
+          fi
+
       - name: Setup ntsync
         run: |
           cd kernel_source

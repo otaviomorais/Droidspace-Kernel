@@ -55,6 +55,27 @@ clone_kernel() {
     fi
 }
 
+setup_susfs() {
+    echo "=== Setting up SUSFS anti-detection ==="
+    if [ ! -d $KERNEL/toolchains/susfs4ksu ]; then
+        git clone --depth=1 -b kernel-4.19 https://gitlab.com/simonpunk/susfs4ksu.git $KERNEL/toolchains/susfs4ksu 2>/dev/null || \
+            git clone --depth=1 https://github.com/sidex15/susfs4ksu.git $KERNEL/toolchains/susfs4ksu 2>/dev/null || true
+    fi
+    if [ -d "$KERNEL/toolchains/susfs4ksu/kernel_patches" ]; then
+        echo "=== Copying SUSFS files into kernel source ==="
+        cp -r $KERNEL/toolchains/susfs4ksu/kernel_patches/include/linux/susfs*.h $KERNEL_SOURCE/include/linux/ 2>/dev/null || true
+        cp $KERNEL/toolchains/susfs4ksu/kernel_patches/fs/susfs.c $KERNEL_SOURCE/fs/ 2>/dev/null || true
+        cd $KERNEL_SOURCE
+        echo "=== Patching Linux 4.19 VFS for SUSFS ==="
+        patch -p1 < $KERNEL/toolchains/susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.19.patch 2>/dev/null || true
+        if [ -f $KERNEL/toolchains/susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch ]; then
+            patch -p1 -d drivers/kernelsu < $KERNEL/toolchains/susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch 2>/dev/null || true
+        fi
+        echo "=== SUSFS patched successfully ==="
+        cd $KERNEL
+    fi
+}
+
 setup_ntsync() {
     echo "=== Applying ntsync (NT synchronization primitives) ==="
     cd $KERNEL_SOURCE
@@ -193,6 +214,7 @@ package() {
 
 setup_toolchains
 clone_kernel
+setup_susfs
 setup_ntsync
 clone_anykernel
 build
