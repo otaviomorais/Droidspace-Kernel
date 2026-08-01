@@ -10,10 +10,9 @@ source settings.sh
 KERNEL=$PWD
 KERNEL_SOURCE=$KERNEL/kernel_source
 
-CLANG=$KERNEL/toolchains/proton-clang
-CLANG_LINK="https://github.com/kdrag0n/proton-clang"
-KERNEL_REPO="https://github.com/starscroch/kernel_xiaomi_sm8250.git"
-KERNEL_BRANCH="lineage-sunflower"
+CLANG=$KERNEL/toolchains/clang
+KERNEL_REPO="https://github.com/TIMISONG-dev/kernel_xiaomi_sm8250.git"
+KERNEL_BRANCH="magictime-new"
 ANYKERNEL_LINK="https://github.com/TIMISONG-dev/MagicTime-alioth"
 ANYKERNEL_DIR=$KERNEL/AnyKernel
 
@@ -21,8 +20,11 @@ setup_toolchains() {
     echo "=== Setting up toolchains ==="
 
     if [ ! -d $CLANG ]; then
-        echo "Downloading Proton Clang 13..."
-        git clone --depth=1 $CLANG_LINK $CLANG
+        echo "Downloading Clang..."
+        mkdir -p $CLANG
+        wget -q -O /tmp/clang.tar.gz "https://github.com/ZyCromerZ/Clang/releases/download/20.0.0git-20250129-release/Clang-20.0.0git-20250129.tar.gz"
+        tar -zxf /tmp/clang.tar.gz -C $CLANG
+        rm -f /tmp/clang.tar.gz
     fi
 
     export PATH=$CLANG/bin:$PATH
@@ -31,26 +33,24 @@ setup_toolchains() {
 clone_kernel() {
     echo "=== Cloning kernel source (${KERNEL_REPO} - branch: ${KERNEL_BRANCH}) ==="
     if [ ! -d $KERNEL_SOURCE ]; then
-        git clone --depth=1 --recursive -b $KERNEL_BRANCH $KERNEL_REPO $KERNEL_SOURCE
+        git clone --depth=1 -b $KERNEL_BRANCH $KERNEL_REPO $KERNEL_SOURCE
         cd $KERNEL_SOURCE
-        git submodule update --init --recursive 2>/dev/null || true
-        if [ ! -f KernelSU/kernel/Makefile ]; then
-            echo "=== Submodule empty, cloning ReSukiSU directly ==="
-            rm -rf KernelSU
-            git clone --depth=1 https://github.com/ReSukiSU/ReSukiSU.git KernelSU
-        fi
+        rm -rf KernelSU-Next
+        git config --unset-all submodule.KernelSU-Next.url 2>/dev/null || true
+        echo "=== Cloning KernelSU-Next v3.2.0-legacy ==="
+        git clone --depth=1 --branch v3.2.0-legacy \
+            https://github.com/KernelSU-Next/KernelSU-Next.git \
+            KernelSU-Next
         if [ ! -L drivers/kernelsu ]; then
-            ln -sf ../KernelSU/kernel drivers/kernelsu
+            ln -sf ../KernelSU-Next/kernel drivers/kernelsu
         fi
-        # Fix empty obj-y on line 88 in starscroch drivers/Makefile and add KSU
-        sed -i 's/^obj-y[ \t]*$/obj-$(CONFIG_KSU) += kernelsu\//' drivers/Makefile
         grep -q "kernelsu" drivers/Makefile || \
             printf "\nobj-\$(CONFIG_KSU) += kernelsu/\n" >> drivers/Makefile
-        if [ -f KernelSU/kernel/tools/manual_hook_check.mk ]; then
-            echo "=== Disabling ReSukiSU manual hook assertion checks ==="
-            echo "" > KernelSU/kernel/tools/manual_hook_check.mk
-        fi
-        echo "=== ReSukiSU ready ==="
+        grep -q "drivers/kernelsu/Kconfig" drivers/Kconfig || \
+            sed -i "/endmenu/i\source \"drivers/kernelsu/Kconfig\"" drivers/Kconfig
+        sed -i 's/&current->cpus_allowed);/\&current->cpus_mask);/g' \
+            KernelSU-Next/kernel/selinux/rules.c 2>/dev/null || true
+        echo "=== KernelSU-Next v3.2.0-legacy ready ==="
         cd $KERNEL
     fi
 }
