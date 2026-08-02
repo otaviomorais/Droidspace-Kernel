@@ -16,3 +16,4 @@ diff --git a/scripts/mod/modpost.h b/scripts/mod/modpost.h
  #define ELF_ST_BIND ELF64_ST_BIND
  #define ELF_ST_TYPE ELF64_ST_TYPE
  #define ELF_ST_INFO ELF64_ST_INFO
+
