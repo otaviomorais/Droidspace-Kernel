@@ -1,6 +1,20 @@
 #!/bin/bash
 
-source settings.sh
+# Settings (previously in settings.sh, deleted in commit 2192b7f3e)
+export VERSION="1.5.1"
+export BUILD=1
+export PREFIX=""
+export DESC="DroidSpace Kernel v1.5.1 for Poco F3 (alioth) [Base: TIMISONG-dev MagicTime + ReSukiSU + NTSYNC 0666 + Cgroup v2]"
+export DEVICE="alioth"
+export TYPE="release"
+export LEVEL=1
+export EXTRA=""
+export SHAB=""
+export SHAK=""
+
+# Kernel Base Repository (TIMISONG-dev/kernel_xiaomi_sm8250 - branch: magictime-new)
+export KERNEL_REPO="https://github.com/TIMISONG-dev/kernel_xiaomi_sm8250.git"
+export KERNEL_BRANCH="magictime-new"
 
 #
 # Droidspace Kernel build script
@@ -11,8 +25,6 @@ KERNEL=$PWD
 KERNEL_SOURCE=$KERNEL/kernel_source
 
 CLANG=$KERNEL/toolchains/clang
-KERNEL_REPO="https://github.com/TIMISONG-dev/kernel_xiaomi_sm8250.git"
-KERNEL_BRANCH="magictime-new"
 ANYKERNEL_LINK="https://github.com/TIMISONG-dev/MagicTime-alioth"
 ANYKERNEL_DIR=$KERNEL/AnyKernel
 
