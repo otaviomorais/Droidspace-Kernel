@@ -53,6 +53,10 @@ clone_kernel() {
  git config --unset-all submodule.KernelSU.url 2>/dev/null || true
  # REMOVE old rsuntk symlink if present (upstream has KernelSU-Next)
  rm -f drivers/kernelsu
+ # Apply Clang 20 fix for Linux 4.19 (ELF64_ST_BIND/ELF64_ST_TYPE undefined)
+ if [ -f $KERNEL/patches/clang20-fix/clang20-elf-fix.patch ]; then
+   patch -p1 --batch --force < $KERNEL/patches/clang20-fix/clang20-elf-fix.patch 2>/dev/null || true
+ fi
  echo "=== Cloning ReSukiSU (main) ==="
  git clone --depth=1 \
  https://github.com/ReSukiSU/ReSukiSU.git \
