@@ -104,6 +104,8 @@ jobs:
           # Remove old KernelSU-Next (rsuntk) if present
           rm -rf KernelSU-Next 2>/dev/null || true
           git config --unset-all submodule.KernelSU-Next.url 2>/dev/null || true
+          # REMOVE old rsuntk symlink if present (upstream has KernelSU-Next)
+          rm -f drivers/kernelsu
           # Clone ReSukiSU (main)
           echo "=== Cloning ReSukiSU (main) ==="
           git clone --depth=1 \
@@ -115,9 +117,7 @@ jobs:
             exit 1
           fi
           # Ensure symlink exists
-          if [ ! -L drivers/kernelsu ]; then
-            ln -sf ../KernelSU/kernel drivers/kernelsu
-          fi
+          ln -sf ../KernelSU/kernel drivers/kernelsu
           # Ensure Makefile entry exists
           grep -q "kernelsu" drivers/Makefile || \
             printf "\nobj-$(CONFIG_KSU) += kernelsu/\n" >> drivers/Makefile
@@ -138,7 +138,7 @@ jobs:
             cp ${{ github.workspace }}/toolchains/susfs4ksu/kernel_patches/fs/susfs.c kernel_source/fs/ 2>/dev/null || true
             cd kernel_source
             echo "=== Patching Linux 4.19 VFS for SUSFS ==="
-            patch -p1 < ${{ github.workspace }}/toolchains/susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.19.patch 2>/dev/null || true
+            patch -p1 --batch --force < ${{ github.workspace }}/toolchains/susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.19.patch 2>/dev/null || true
             # IMPORTANT: Do NOT apply 10_enable_susfs_for_ksu.patch!
             # ReSukiSU already has SUSFS integration built into its driver code.
             # Applying it would CONFLICT with ReSukiSU's own Kconfig/Kbuild.
