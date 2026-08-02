@@ -55,7 +55,11 @@ clone_kernel() {
  rm -f drivers/kernelsu
  # Apply Clang 20 fix for Linux 4.19 (ELF64_ST_BIND/ELF64_ST_TYPE undefined)
  if [ -f $KERNEL/patches/clang20-fix/clang20-elf-fix.patch ]; then
-   patch -p1 --batch --force < $KERNEL/patches/clang20-fix/clang20-elf-fix.patch 2>/dev/null || true
+   echo "=== Applying Clang 20 compatibility patch ==="
+   patch -p1 --batch --force < $KERNEL/patches/clang20-fix/clang20-elf-fix.patch && echo "Clang 20 patch applied successfully" || echo "WARNING: Clang 20 patch failed"
+ else
+   echo "WARNING: Clang 20 patch file not found at $KERNEL/patches/clang20-fix/clang20-elf-fix.patch"
+   ls -la $KERNEL/patches/clang20-fix/ 2>/dev/null || echo "Directory not found"
  fi
  echo "=== Cloning ReSukiSU (main) ==="
  git clone --depth=1 \
