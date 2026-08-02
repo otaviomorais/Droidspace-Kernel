@@ -70,7 +70,7 @@ setup_susfs() {
         echo "=== Patching Linux 4.19 VFS for SUSFS ==="
         patch -p1 < $KERNEL/toolchains/susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.19.patch 2>/dev/null || true
         if [ -f $KERNEL/toolchains/susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch ]; then
-        cd $KERNEL_SOURCE/drivers/kernelsu && patch -p1 < $KERNEL/toolchains/susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch 2>/dev/null || true
+        cd $KERNEL_SOURCE/drivers/kernelsu/.. && patch -p2 < $KERNEL/toolchains/susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch 2>/dev/null || true
         cd $KERNEL_SOURCE
         fi
         echo "=== SUSFS patched successfully ==="
