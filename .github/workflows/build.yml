@@ -140,7 +140,8 @@ jobs:
             echo "=== Patching Linux 4.19 VFS for SUSFS ==="
             patch -p1 < ${{ github.workspace }}/toolchains/susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.19.patch 2>/dev/null || true
             if [ -f ${{ github.workspace }}/toolchains/susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch ]; then
-              patch -p1 -d drivers/kernelsu < ${{ github.workspace }}/toolchains/susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch 2>/dev/null || true
+            cd drivers/kernelsu && patch -p1 < ${{ github.workspace }}/toolchains/susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch 2>/dev/null || true
+            cd ..
             fi
             echo "=== SUSFS patched successfully ==="
           fi
