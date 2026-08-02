@@ -11,11 +11,6 @@ on:
         description: 'Dispositivo (defconfig base)'
         required: false
         default: 'alioth'
-      create_release:
-        description: 'Criar GitHub Release com o zip flashável'
-        required: false
-        type: boolean
-        default: false
   push:
     branches:
       - main
@@ -126,9 +121,17 @@ jobs:
           if-no-files-found: error
 
       - name: Create Release
-        if: inputs.create_release == true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "kernel-$(date +%Y%m%d-%H%M)" MagicTime-*.zip \
-            --generate-notes
+          ZIP="$(ls MagicTime-*.zip)"
+          RELEASE="kernel-$(date +%Y%m%d-%H%M)"
+          gh release create "$RELEASE" "$ZIP" \
+            --title "MagicTime ${DEVICE} Droidspace $(date +%Y%m%d-%H%M)" \
+            --notes "Build do kernel MagicTime (branch $KERNEL_BRANCH) para $DEVICE com:
+          - driver ntsync (Wine/Proton)
+          - KernelSU-Next
+          - configs DroidSpaces completas
+
+          Flash via TWRP/recovery."
+          echo "Release: https://github.com/${{ github.repository }}/releases/tag/$RELEASE"
