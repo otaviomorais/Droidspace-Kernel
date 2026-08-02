@@ -121,10 +121,12 @@ jobs:
           if-no-files-found: error
 
       - name: Create Release
+        working-directory: droidspace
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
-          ZIP="$(ls MagicTime-*.zip)"
+          ZIP="$(ls "$GITHUB_WORKSPACE"/MagicTime-*.zip)"
           RELEASE="kernel-$(date +%Y%m%d-%H%M)"
           gh release create "$RELEASE" "$ZIP" \
             --title "MagicTime ${DEVICE} Droidspace $(date +%Y%m%d-%H%M)" \
