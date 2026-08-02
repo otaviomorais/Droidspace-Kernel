@@ -205,6 +205,14 @@ package() {
 
     BUILD_DATE=$(date '+%Y-%m-%d_%H-%M-%S')
 
+    # Ensure ramdisk overlay (init.zram.rc) and anykernel.sh are packaged for post-boot ZRAM enforcement
+    if [ -d "ramdisk" ]; then
+        cp -r ramdisk .
+    fi
+    if [ -f "anykernel.sh" ]; then
+        cp anykernel.sh .
+    fi
+
     rm -f *.zip
     7z a -mx9 Droidspace-${DEVICE}-v${VERSION}.zip * -x!*.zip
 
