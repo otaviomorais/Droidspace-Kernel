@@ -45,6 +45,13 @@ jobs:
             https://github.com/TIMISONG-dev/kernel_xiaomi_sm8250.git kernel
           cd kernel
           git submodule update --init --depth 1
+          # KernelSU-Next precisa do historico completo + tags para o Kbuild
+          # versionar o driver (KSU_VERSION = 30000 + rev-list --count + 200 e
+          # KSU_VERSION_TAG = git describe --tags). Com clone shallow o driver
+          # reporta 30201 e o manager mostra "0.0.0". O fix de unshallow dentro
+          # do Kbuild nao funciona em submodules (.git e um gitfile).
+          git -C KernelSU-Next fetch --unshallow origin
+          git -C KernelSU-Next fetch origin '+refs/tags/*:refs/tags/*'
 
       - name: Apply ntsync patch
         run: |
