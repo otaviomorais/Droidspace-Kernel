@@ -15,6 +15,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: write
+
 concurrency:
   group: kernel-build
   cancel-in-progress: false
