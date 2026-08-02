@@ -64,10 +64,15 @@ jobs:
 
       - name: Download Clang 20 (ZyCromerZ)
         run: |
+          mkdir -p toolchain
+          cd toolchain
           curl -L -o clang.tar.gz \
             https://github.com/ZyCromerZ/Clang/releases/download/20.0.0git-20250129-release/Clang-20.0.0git-20250129.tar.gz
           tar -xf clang.tar.gz
-          CLANG_BIN="$(find . -type f -name clang -path '*/bin/*' -exec dirname {} \; | head -1)"
+          CLANG_BIN="$(pwd)/bin"
+          if [ ! -x "$CLANG_BIN/clang" ]; then
+            CLANG_BIN="$(cd "$(find . -name clang -path '*/bin/*' -exec dirname {} \; | head -1)" && pwd)"
+          fi
           echo "Clang em: $CLANG_BIN"
           echo "$CLANG_BIN" >> "$GITHUB_PATH"
 
