@@ -46,6 +46,7 @@ clone_kernel() {
  echo "=== Cloning kernel source (${KERNEL_REPO} - branch: ${KERNEL_BRANCH}) ==="
  if [ ! -d $KERNEL_SOURCE ]; then
  git clone --depth=1 -b $KERNEL_BRANCH $KERNEL_REPO $KERNEL_SOURCE
+ fi
  cd $KERNEL_SOURCE
  rm -rf KernelSU-Next KernelSU 2>/dev/null || true
  git config --unset-all submodule.KernelSU-Next.url 2>/dev/null || true
@@ -65,7 +66,6 @@ clone_kernel() {
  # ReSukiSU does not need cpus_allowed patch (compat layer handles it)
  echo "=== ReSukiSU ready ==="
  cd $KERNEL
- fi
 }
 
 setup_susfs() {
