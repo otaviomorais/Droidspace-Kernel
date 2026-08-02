@@ -31,51 +31,65 @@ setup_toolchains() {
 }
 
 clone_kernel() {
-    echo "=== Cloning kernel source (${KERNEL_REPO} - branch: ${KERNEL_BRANCH}) ==="
-    if [ ! -d $KERNEL_SOURCE ]; then
-        git clone --depth=1 -b $KERNEL_BRANCH $KERNEL_REPO $KERNEL_SOURCE
-        cd $KERNEL_SOURCE
-        rm -rf KernelSU-Next
-        git config --unset-all submodule.KernelSU-Next.url 2>/dev/null || true
-        echo "=== Cloning rsuntk/KernelSU (main) ==="
-        git clone --depth=1 \
-            https://github.com/rsuntk/KernelSU.git \
-            KernelSU-Next
-        if [ ! -L drivers/kernelsu ]; then
-            ln -sf ../KernelSU-Next/kernel drivers/kernelsu
-        fi
-        grep -q "kernelsu" drivers/Makefile || \
-            printf "\nobj-\$(CONFIG_KSU) += kernelsu/\n" >> drivers/Makefile
-        # Ensure Kconfig entry exists BEFORE defconfig so CONFIG_KSU is visible
-        grep -q "drivers/kernelsu/Kconfig" drivers/Kconfig || \
-            sed -i "/endmenu/i\source \"drivers/kernelsu/Kconfig\"" drivers/Kconfig
-        sed -i 's/&current->cpus_allowed);/\&current->cpus_mask);/g' \
-            KernelSU-Next/kernel/selinux/rules.c 2>/dev/null || true
-        echo "=== rsuntk/KernelSU ready ==="
-        cd $KERNEL
-    fi
+ echo "=== Cloning kernel source (${KERNEL_REPO} - branch: ${KERNEL_BRANCH}) ==="
+ if [ ! -d $KERNEL_SOURCE ]; then
+ git clone --depth=1 -b $KERNEL_BRANCH $KERNEL_REPO $KERNEL_SOURCE
+ cd $KERNEL_SOURCE
+ rm -rf KernelSU-Next KernelSU 2>/dev/null || true
+ git config --unset-all submodule.KernelSU-Next.url 2>/dev/null || true
+ git config --unset-all submodule.KernelSU.url 2>/dev/null || true
+ echo "=== Cloning ReSukiSU (main) ==="
+ git clone --depth=1 \
+ https://github.com/ReSukiSU/ReSukiSU.git \
+ KernelSU
+ if [ ! -L drivers/kernelsu ]; then
+ ln -sf ../KernelSU/kernel drivers/kernelsu
+ fi
+ grep -q "kernelsu" drivers/Makefile || \
+ printf "\nobj-\$(CONFIG_KSU) += kernelsu/\n" >> drivers/Makefile
+ # Ensure Kconfig entry exists BEFORE defconfig so CONFIG_KSU is visible
+ grep -q "drivers/kernelsu/Kconfig" drivers/Kconfig || \
+ sed -i "/endmenu/i\source \"drivers/kernelsu/Kconfig\"" drivers/Kconfig
+ # ReSukiSU does not need cpus_allowed patch (compat layer handles it)
+ echo "=== ReSukiSU ready ==="
+ cd $KERNEL
+ fi
 }
 
 setup_susfs() {
-    echo "=== Setting up SUSFS anti-detection ==="
-    if [ ! -d $KERNEL/toolchains/susfs4ksu ]; then
-        git clone --depth=1 -b kernel-4.19 https://gitlab.com/simonpunk/susfs4ksu.git $KERNEL/toolchains/susfs4ksu 2>/dev/null || \
-            git clone --depth=1 https://github.com/sidex15/susfs4ksu.git $KERNEL/toolchains/susfs4ksu 2>/dev/null || true
+ echo "=== Setting up SUSFS anti-detection for ReSukiSU ==="
+ if [ ! -d $KERNEL/toolchains/susfs4ksu ]; then
+ git clone --depth=1 -b kernel-4.19 https://gitlab.com/simonpunk/susfs4ksu.git $KERNEL/toolchains/susfs4ksu 2>/dev/null || \
+ git clone --depth=1 https://github.com/sidex15/susfs4ksu.git $KERNEL/toolchains/susfs4ksu 2>/dev/null || true
+ fi
+ if [ -d "$KERNEL/toolchains/susfs4ksu/kernel_patches" ]; then
+ echo "=== Copying SUSFS files into kernel source ==="
+ cp -r $KERNEL/toolchains/susfs4ksu/kernel_patches/include/linux/susfs*.h $KERNEL_SOURCE/include/linux/ 2>/dev/null || true
+ cp $KERNEL/toolchains/susfs4ksu/kernel_patches/fs/susfs.c $KERNEL_SOURCE/fs/ 2>/dev/null || true
+ cd $KERNEL_SOURCE
+ echo "=== Patching Linux 4.19 VFS for SUSFS ==="
+ patch -p1 < $KERNEL/toolchains/susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.19.patch 2>/dev/null || true
+ # IMPORTANT: Do NOT apply 10_enable_susfs_for_ksu.patch!
+ # ReSukiSU already has SUSFS integration built into its driver code.
+ # Applying it would CONFLICT with ReSukiSU's own Kconfig/Kbuild.
+ echo "=== SUSFS VFS patched successfully (ReSukiSU driver handles the rest) ==="
+ cd $KERNEL
+ fi
+}
+
+setup_resukisu_hooks() {
+    echo "=== Applying ReSukiSU manual hooks to kernel source ==="
+    cd $KERNEL_SOURCE
+
+    # Apply hook patches via script
+    if [ -f $KERNEL/patches/resukisu-hooks/apply_hooks.sh ]; then
+        bash $KERNEL/patches/resukisu-hooks/apply_hooks.sh $KERNEL_SOURCE
+        echo "=== ReSukiSU manual hooks applied ==="
+    else
+        echo "=== WARNING: ReSukiSU hook patcher not found! Build may fail. ==="
     fi
-    if [ -d "$KERNEL/toolchains/susfs4ksu/kernel_patches" ]; then
-        echo "=== Copying SUSFS files into kernel source ==="
-        cp -r $KERNEL/toolchains/susfs4ksu/kernel_patches/include/linux/susfs*.h $KERNEL_SOURCE/include/linux/ 2>/dev/null || true
-        cp $KERNEL/toolchains/susfs4ksu/kernel_patches/fs/susfs.c $KERNEL_SOURCE/fs/ 2>/dev/null || true
-        cd $KERNEL_SOURCE
-        echo "=== Patching Linux 4.19 VFS for SUSFS ==="
-        patch -p1 < $KERNEL/toolchains/susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.19.patch 2>/dev/null || true
-        if [ -f $KERNEL/toolchains/susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch ]; then
-        cd $KERNEL_SOURCE/drivers/kernelsu/.. && patch -p2 < $KERNEL/toolchains/susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch 2>/dev/null || true
-        cd $KERNEL_SOURCE
-        fi
-        echo "=== SUSFS patched successfully ==="
-        cd $KERNEL
-    fi
+
+    cd $KERNEL
 }
 
 setup_ntsync() {
@@ -147,6 +161,8 @@ build() {
     make O="$OUT" ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 olddefconfig 2>&1 | tee -a ../build_config.log
     # Verify KSU is enabled
     grep -q "CONFIG_KSU=y" "$OUT/.config" && echo "KSU enabled: YES" || echo "WARNING: KSU not enabled!"
+    # Verify ReSukiSU manual hook (required for Linux 4.19)
+    grep -q "CONFIG_KSU_MANUAL_HOOK=y" "$OUT/.config" && echo "KSU Manual Hook: YES" || echo "WARNING: KSU Manual Hook not enabled!"
     # Verify ntsync is enabled
     grep -q "CONFIG_NTSYNC=y" "$OUT/.config" && echo "ntsync enabled: YES" || echo "WARNING: ntsync not enabled!"
     # Verify cgroup v2 is enabled
@@ -155,6 +171,8 @@ build() {
     grep -q "CONFIG_HZ_1000=y" "$OUT/.config" && echo "1000Hz Timer Tick: YES" || echo "WARNING: 1000Hz not enabled!"
     # Verify ZSTD ZRAM is enabled
     grep -q "CONFIG_ZRAM_DEF_COMP_ZSTD=y" "$OUT/.config" && echo "ZSTD ZRAM: YES" || echo "WARNING: ZSTD ZRAM not enabled!"
+    # Verify SUSFS is enabled (ReSukiSU)
+    grep -q "CONFIG_KSU_SUSFS=y" "$OUT/.config" && echo "SUSFS enabled: YES" || echo "WARNING: SUSFS not enabled!"
 
     # Set kernel local version suffix — kernel reports "DroidSpace" in `uname -r`
     LOCALVERSION="-DroidSpace"
@@ -225,6 +243,7 @@ package() {
 setup_toolchains
 clone_kernel
 setup_susfs
+setup_resukisu_hooks
 setup_ntsync
 clone_anykernel
 build

@@ -101,19 +101,22 @@ jobs:
             https://github.com/TIMISONG-dev/kernel_xiaomi_sm8250.git \
             kernel_source
           cd kernel_source
-          # Clone rsuntk/KernelSU (main)
-          echo "=== Cloning rsuntk/KernelSU (main) ==="
+          # Remove old KernelSU-Next (rsuntk) if present
+          rm -rf KernelSU-Next 2>/dev/null || true
+          git config --unset-all submodule.KernelSU-Next.url 2>/dev/null || true
+          # Clone ReSukiSU (main)
+          echo "=== Cloning ReSukiSU (main) ==="
           git clone --depth=1 \
-            https://github.com/rsuntk/KernelSU.git \
-            KernelSU-Next
-          # Verify KernelSU was checked out
-          if [ ! -f KernelSU-Next/kernel/Kbuild ] && [ ! -f KernelSU-Next/kernel/Makefile ]; then
-            echo "ERROR: KernelSU failed to checkout!"
+            https://github.com/ReSukiSU/ReSukiSU.git \
+            KernelSU
+          # Verify ReSukiSU was checked out
+          if [ ! -f KernelSU/kernel/Kbuild ] && [ ! -f KernelSU/kernel/Makefile ]; then
+            echo "ERROR: ReSukiSU failed to checkout!"
             exit 1
           fi
-          # Ensure symlink exists (upstream has it, but verify)
+          # Ensure symlink exists
           if [ ! -L drivers/kernelsu ]; then
-            ln -sf ../KernelSU-Next/kernel drivers/kernelsu
+            ln -sf ../KernelSU/kernel drivers/kernelsu
           fi
           # Ensure Makefile entry exists
           grep -q "kernelsu" drivers/Makefile || \
@@ -121,11 +124,8 @@ jobs:
           # Ensure Kconfig entry exists BEFORE defconfig so CONFIG_KSU is visible
           grep -q "drivers/kernelsu/Kconfig" drivers/Kconfig || \
             sed -i "/endmenu/i\source \"drivers/kernelsu/Kconfig\"" drivers/Kconfig
-          # Patch for kernel 4.19: cpus_allowed renamed to cpus_mask (if needed)
-          echo "=== Patching KernelSU for kernel 4.19 compat ==="
-          sed -i 's/&current->cpus_allowed);/\&current->cpus_mask);/g' \
-              KernelSU-Next/kernel/selinux/rules.c 2>/dev/null || true
-          echo "=== rsuntk/KernelSU ready ==="
+          # ReSukiSU does not need cpus_allowed patch (compat layer handles it)
+          echo "=== ReSukiSU ready ==="
 
       - name: Setup SUSFS anti-detection
         run: |
@@ -139,11 +139,21 @@ jobs:
             cd kernel_source
             echo "=== Patching Linux 4.19 VFS for SUSFS ==="
             patch -p1 < ${{ github.workspace }}/toolchains/susfs4ksu/kernel_patches/50_add_susfs_in_kernel-4.19.patch 2>/dev/null || true
-            if [ -f ${{ github.workspace }}/toolchains/susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch ]; then
-            cd drivers/kernelsu/.. && patch -p2 < ${{ github.workspace }}/toolchains/susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch 2>/dev/null || true
-            cd ..
-            fi
-            echo "=== SUSFS patched successfully ==="
+            # IMPORTANT: Do NOT apply 10_enable_susfs_for_ksu.patch!
+            # ReSukiSU already has SUSFS integration built into its driver code.
+            # Applying it would CONFLICT with ReSukiSU's own Kconfig/Kbuild.
+            echo "=== SUSFS VFS patched successfully (ReSukiSU driver handles the rest) ==="
+          fi
+
+      - name: Apply ReSukiSU manual hooks
+        run: |
+          echo "=== Applying ReSukiSU manual hooks to kernel source ==="
+          cd kernel_source
+          if [ -f ${{ github.workspace }}/patches/resukisu-hooks/apply_hooks.sh ]; then
+            bash ${{ github.workspace }}/patches/resukisu-hooks/apply_hooks.sh .
+            echo "=== ReSukiSU manual hooks applied ==="
+          else
+            echo "=== WARNING: ReSukiSU hook patcher not found! Build may fail. ==="
           fi
 
       - name: Setup ntsync
@@ -206,8 +216,12 @@ jobs:
           make O=out olddefconfig
           # Verify KSU is enabled
           grep -q "CONFIG_KSU=y" out/.config && echo "KSU enabled: YES" || echo "WARNING: KSU not enabled!"
+          # Verify ReSukiSU manual hook (required for Linux 4.19)
+          grep -q "CONFIG_KSU_MANUAL_HOOK=y" out/.config && echo "KSU Manual Hook: YES" || echo "WARNING: KSU Manual Hook not enabled!"
           # Verify ntsync is enabled
           grep -q "CONFIG_NTSYNC=y" out/.config && echo "ntsync enabled: YES" || echo "WARNING: ntsync not enabled!"
+          # Verify SUSFS is enabled (ReSukiSU)
+          grep -q "CONFIG_KSU_SUSFS=y" out/.config && echo "SUSFS enabled: YES" || echo "WARNING: SUSFS not enabled!"
 
       - name: Build kernel
         run: |
