@@ -17,6 +17,22 @@ done
 - `ntsync/` — driver ntsync (Wine/Proton), diretamente do upstream.
 - `mglru/` — backport do Multi-Gen LRU para o kernel 4.19.
 - `io_uring/` — backport do io_uring v5.1 para o kernel 4.19.
+- `droidspaces/` — fixes de compatibilidade Droidspaces/LXC.
+
+## droidspaces/
+
+Fixes de compatibilidade do Droidspaces/LXC para o kernel 4.19, a partir de
+[`ravindu644/Droidspaces-OSS`](https://github.com/ravindu644/Droidspaces-OSS)
+(`Documentation/resources/kernel-patches/non-GKI`).
+
+O `0001-fix-restore-cgroup-file-prefix-handling.patch` restaura o tratamento
+de prefixo de arquivos de cgroup para compatibilidade com o Droidspaces/LXC:
+recria os links `subsys.file` quando o cgroup é montado com
+`CGRP_ROOT_NOPREFIX`. Aplica limpo sobre a base `magictime-tiny`.
+
+O patch `01.fix_kernel_panic_in_xt_qtaguid.patch` da mesma pasta foi
+**descartado**: o kernel timisong não tem `net/netfilter/xt_qtaguid.c` (nem
+Kconfig nem config), então o código do bug não existe aqui.
 
 ## io_uring/
 
