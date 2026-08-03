@@ -2461,7 +2461,7 @@ index 543cb5314..40e67c45a 100644
  		mmap_read_lock(mm);
  		lock_page(page);
 diff --git a/mm/vmscan.c b/mm/vmscan.c
-index 4a94b4919..a9718e8f6 100644
+index 4a94b4919..098aa1775 100644
 --- a/mm/vmscan.c
 +++ b/mm/vmscan.c
 @@ -50,6 +50,10 @@
@@ -3907,13 +3907,13 @@ index 4a94b4919..a9718e8f6 100644
 +			break;
 +
 +		/* the caller might be holding the lock for write */
-+		if (down_read_trylock(&mm->mmap_sem)) {
++		if (down_read_trylock(&mm->mmap_lock)) {
 +			unsigned long start = walk->next_addr;
 +			unsigned long end = mm->highest_vm_end;
 +
 +			err = walk_page_range(start, end, &args);
 +
-+			up_read(&mm->mmap_sem);
++			up_read(&mm->mmap_lock);
 +
 +			if (walk->batched) {
 +				spin_lock_irq(&pgdat->lru_lock);
