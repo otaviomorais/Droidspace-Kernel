@@ -1,4 +1,4 @@
-name: Build MagicTime kernel (ntsync + KernelSU + DroidSpaces)
+name: Build MagicTime kernel (ntsync + KernelSU + MGLRU + DroidSpaces)
 
 on:
   workflow_dispatch:
@@ -56,11 +56,14 @@ jobs:
           git -C KernelSU-Next fetch --unshallow origin
           git -C KernelSU-Next fetch origin '+refs/tags/*:refs/tags/*'
 
-      - name: Apply ntsync patch
+      - name: Apply kernel patches (patches/*/*.patch, sorted)
         run: |
           cd kernel
-          git apply --verbose \
-            "$GITHUB_WORKSPACE/droidspace/patches/ntsync/0001-drivers-misc-Add-NT-synchronization-primitive-emulati.patch"
+          shopt -s nullglob
+          for patch in "$GITHUB_WORKSPACE"/droidspace/patches/*/*.patch; do
+            echo "==> Applying $patch"
+            git apply --verbose "$patch"
+          done
 
       - name: Install DroidSpaces config fragment
         run: |
@@ -141,6 +144,7 @@ jobs:
           gh release create "$RELEASE" "$ZIP" \
             --title "MagicTime ${DEVICE} Droidspace $(date +%Y%m%d-%H%M)" \
             --notes "Build do kernel MagicTime (branch $KERNEL_BRANCH) para $DEVICE com:
+          - Multi-Gen LRU (MGLRU) backport
           - driver ntsync (Wine/Proton)
           - KernelSU-Next
           - configs DroidSpaces completas
