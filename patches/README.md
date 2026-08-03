@@ -14,10 +14,24 @@ done
 
 ## Diretórios
 
-- `ntsync/` — driver ntsync (Wine/Proton), diretamente do upstream.
+- `ntsync/` — driver ntsync (Wine/Proton), diretamente do upstream + fix de
+  permissão do device node embutido no kernel.
 - `mglru/` — backport do Multi-Gen LRU para o kernel 4.19.
 - `io_uring/` — backport do io_uring v5.1 para o kernel 4.19.
 - `droidspaces/` — fixes de compatibilidade Droidspaces/LXC.
+
+## ntsync/
+
+O `0001-...` adiciona o driver ntsync (`drivers/misc/ntsync.c` +
+`include/uapi/linux/ntsync.h` + Kconfig/Makefile) ao kernel.
+
+O `0002-ntsync-enforce-node-perms.patch` corrige a permissão do device node
+**dentro do driver**: o Android sobrescreve o `.mode = 0666` do miscdevice
+para `0600` via ueventd (sem regra em `ueventd.rc`). O driver passa a
+re-aplicar `chmod 0666` em `/dev/ntsync` a cada 5s (delayed_work com
+`kern_path` + `vfs_fchmod`), sem depender de módulo KSU nem de comandos —
+não-root (Wine/Proton via Box64 no DroidSpaces) consegue abrir o dispositivo.
+Aplica limpo sobre o `0001`.
 
 ## droidspaces/
 
