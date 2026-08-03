@@ -146,6 +146,7 @@ jobs:
             --notes "Build do kernel MagicTime (branch $KERNEL_BRANCH) para $DEVICE com:
           - Multi-Gen LRU (MGLRU) backport
           - driver ntsync (Wine/Proton)
+          - io_uring (v5.1 backport)
           - KernelSU-Next
           - configs DroidSpaces completas
 

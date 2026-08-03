@@ -16,6 +16,40 @@ done
 
 - `ntsync/` — driver ntsync (Wine/Proton), diretamente do upstream.
 - `mglru/` — backport do Multi-Gen LRU para o kernel 4.19.
+- `io_uring/` — backport do io_uring v5.1 para o kernel 4.19.
+
+## io_uring/
+
+Backport do io_uring (mainline **v5.1**) para o kernel 4.19. O v5.1 é
+autocontido (`fs/io_uring.c` + `include/uapi/linux/io_uring.h`), sem a
+dependência de io-wq (que só chega no 5.2).
+
+O patch `0001-io_uring-5.1-backport.patch` é a consolidação do port (17
+arquivos, +3438/-11) sobre a base `e764f7231` do `magictime-tiny` e inclui as
+adaptações para o 4.19:
+
+- `kernel/signal.c`/`include/linux/signal.h`/`include/linux/compat.h`:
+  helpers de sigmask do v5.1 (`set_user_sigmask`,
+  `set_compat_user_sigmask`, `restore_user_sigmask`)
+- `include/linux/ioprio.h`: `get_current_ioprio()`
+- `include/linux/uio.h`: `ITER_BVEC_FLAG_NO_REF` + `iov_iter_bvec_no_ref()`
+- `include/linux/bvec.h`: `bvec_nth_page()`/`mp_bvec_for_each_page()`
+  (macros)
+- `include/linux/blk_types.h` + `block/bio.c`: `BIO_NO_PAGE_REF` e
+  `__bio_iov_bvec_add_pages()`
+- `include/linux/fs.h`: `f_op->iopoll`, `io_uring_get_socket()`;
+  `net/unix/scm.c`: chamada em `unix_get_socket()`
+- Syscalls 425/426/427 (`unistd.h`, `syscalls.h`, `sys_ni.c`), `init/Kconfig`
+  (`config IO_URING`), `fs/Makefile`
+
+Habilite com a config fragment em `configs/droidspaces.config`:
+
+```
+CONFIG_IO_URING=y
+```
+
+Referência da árvore final aplicada: worktree local
+`io_uring-wt` (base `e764f7231`, branch `io_uring-5.1-backport`).
 
 ## mglru/
 
