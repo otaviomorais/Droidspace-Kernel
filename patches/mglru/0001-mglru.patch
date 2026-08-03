@@ -1378,6 +1378,20 @@ index 260c4421d..e76da3174 100644
  
  #define PAGE_FLAGS_PRIVATE				\
  	(1UL << PG_private | 1UL << PG_private_2)
+diff --git a/include/linux/radix-tree.h b/include/linux/radix-tree.h
+index d55de428a..15388b7e3 100644
+--- a/include/linux/radix-tree.h
++++ b/include/linux/radix-tree.h
+@@ -231,6 +231,9 @@ static inline int radix_tree_exception(void *arg)
+ 	return unlikely((unsigned long)arg & RADIX_TREE_ENTRY_MASK);
+ }
+ 
++int __radix_tree_create(struct radix_tree_root *, unsigned long index,
++			unsigned order, struct radix_tree_node **nodep,
++			void __rcu ***slotp);
+ int __radix_tree_insert(struct radix_tree_root *, unsigned long index,
+ 			unsigned order, void *);
+ static inline int radix_tree_insert(struct radix_tree_root *root,
 diff --git a/include/linux/sched.h b/include/linux/sched.h
 index f50e0e36a..427f4d458 100644
 --- a/include/linux/sched.h
@@ -1602,6 +1616,19 @@ index b0e63d8b8..a2196a544 100644
  
  	if (!prev->mm) {
  		prev->active_mm = NULL;
+diff --git a/lib/radix-tree.c b/lib/radix-tree.c
+index 86b51d621..cf5ae1003 100644
+--- a/lib/radix-tree.c
++++ b/lib/radix-tree.c
+@@ -748,7 +748,7 @@ static bool delete_node(struct radix_tree_root *root,
+  *
+  *	Returns -ENOMEM, or 0 for success.
+  */
+-static int __radix_tree_create(struct radix_tree_root *root,
++int __radix_tree_create(struct radix_tree_root *root,
+ 		unsigned long index, unsigned order,
+ 		struct radix_tree_node **nodep, void __rcu ***slotp)
+ {
 diff --git a/mm/Kconfig b/mm/Kconfig
 index 4a80d89df..92fd735da 100644
 --- a/mm/Kconfig
@@ -1777,7 +1804,7 @@ index 879a8a253..e6de79d79 100644
  	.post_attach = mem_cgroup_move_task,
  	.bind = mem_cgroup_bind,
 diff --git a/mm/memory.c b/mm/memory.c
-index f3103265c..134566fc0 100644
+index f3103265c..1cd4f77a2 100644
 --- a/mm/memory.c
 +++ b/mm/memory.c
 @@ -40,6 +40,7 @@
@@ -1816,7 +1843,7 @@ index f3103265c..134566fc0 100644
 +	rcu_read_lock();
 +	item = radix_tree_lookup(&mapping->i_pages, index);
 +	rcu_read_unlock();
-+	if (radix_tree_exceptional_entry(item))
++	if (xa_is_value(item))
 +		lru_gen_refault(page, item);
 +}
 +#else
@@ -2239,7 +2266,7 @@ index 6356246d2..a74fd4935 100644
  
  /*
 diff --git a/mm/swap_state.c b/mm/swap_state.c
-index 9c38a6734..e5174c9d4 100644
+index 9c38a6734..9b28136b8 100644
 --- a/mm/swap_state.c
 +++ b/mm/swap_state.c
 @@ -8,6 +8,7 @@
@@ -2277,7 +2304,7 @@ index 9c38a6734..e5174c9d4 100644
 +
 +		item = radix_tree_deref_slot_protected(slot,
 +				&address_space->i_pages.xa_lock);
-+		if (WARN_ON_ONCE(item && !radix_tree_exceptional_entry(item))) {
++		if (WARN_ON_ONCE(item && !xa_is_value(item))) {
 +			error = -EEXIST;
 +			break;
 +		}
@@ -2314,7 +2341,7 @@ index 9c38a6734..e5174c9d4 100644
  	VM_BUG_ON_PAGE(!PageLocked(page), page);
  	VM_BUG_ON_PAGE(!PageSwapCache(page), page);
  	VM_BUG_ON_PAGE(PageWriteback(page), page);
-+	VM_BUG_ON(shadow && !radix_tree_exceptional_entry(shadow));
++	VM_BUG_ON(shadow && !xa_is_value(shadow));
  
  	entry.val = page_private(page);
  	address_space = swap_address_space(entry);
@@ -2364,7 +2391,7 @@ index 9c38a6734..e5174c9d4 100644
 +					 &iter, curr) {
 +			item = radix_tree_deref_slot_protected(slot,
 +					&address_space->i_pages.xa_lock);
-+			if (radix_tree_exceptional_entry(item))
++			if (xa_is_value(item))
 +				radix_tree_iter_delete(&address_space->i_pages,
 +						       &iter, slot);
 +			if (iter.next_index > end)
