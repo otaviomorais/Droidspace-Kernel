@@ -1141,7 +1141,7 @@ index 00000000000..00088c8e9bc
 +		/* Use 8x RA size as a decent limiter for both reads/writes */
 +		max_pages = filp->f_ra.ra_pages;
 +		if (!max_pages)
-+			max_pages = VM_READAHEAD_PAGES;
++			max_pages = 4;
 +		max_pages *= 8;
 +
 +		/* If max pages are exceeded, reset the state */
@@ -2683,7 +2683,7 @@ index 00000000000..00088c8e9bc
 +		}
 +
 +		ret = 0;
-+		down_read(&current->mm->mmap_lock);
++		down_read(&current->mm->mmap_sem);
 +		pret = get_user_pages_longterm(ubuf, nr_pages, FOLL_WRITE,
 +						pages, vmas);
 +		if (pret == nr_pages) {
@@ -2700,7 +2700,7 @@ index 00000000000..00088c8e9bc
 +		} else {
 +			ret = pret < 0 ? pret : -EFAULT;
 +		}
-+		up_read(&current->mm->mmap_lock);
++		up_read(&current->mm->mmap_sem);
 +		if (ret) {
 +			/*
 +			 * if we did partial map, or found file backed vmas,
