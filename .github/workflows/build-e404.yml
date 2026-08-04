@@ -81,9 +81,9 @@ jobs:
           export KBUILD_BUILD_USER=Droidspace
           export KBUILD_BUILD_HOST=github-actions
           make O=out LLVM=1 LLVM_IAS=1 HOSTCC=gcc PYTHON=python3 \
-            vendor/alioth_defconfig
+            CROSS_COMPILE=aarch64-linux-gnu- vendor/alioth_defconfig
           make O=out LLVM=1 LLVM_IAS=1 HOSTCC=gcc PYTHON=python3 \
-            vendor/droidspace.config
+            CROSS_COMPILE=aarch64-linux-gnu- vendor/droidspace.config
 
       - name: Build kernel
         run: |
@@ -92,6 +92,7 @@ jobs:
           export KBUILD_BUILD_USER=Droidspace
           export KBUILD_BUILD_HOST=github-actions
           make -j"$(nproc)" O=out LLVM=1 LLVM_IAS=1 HOSTCC=gcc PYTHON=python3 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
             CC=clang LD=ld.lld AS=llvm-as AR=llvm-ar NM=llvm-nm \
             OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip
 
