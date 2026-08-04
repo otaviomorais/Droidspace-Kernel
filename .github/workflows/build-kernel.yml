@@ -11,9 +11,6 @@ on:
         description: 'Dispositivo (defconfig base)'
         required: false
         default: 'alioth'
-  push:
-    branches:
-      - main
 
 permissions:
   contents: write
