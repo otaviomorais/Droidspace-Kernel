@@ -62,7 +62,26 @@ alioth, branch `magictime-tiny`), passando do modelo antigo (lock por zspage via
   dedup e per-cpu streams (CONFIG_ZRAM_WRITEBACK, ZRAM_MEMORY_TRACKING).
   O zram do scarlet tem features diferentes (CONFIG_ZRAM_DEF_COMP, module_param
   default_compressor) — **não aplicadas** para evitar conflitos.
-- **Outros arquivos**: apenas `mm/zsmalloc.c` e `include/linux/zsmalloc.h`.
+- **Arquivos tocados**: `mm/zsmalloc.c`, `include/linux/zsmalloc.h` e
+  `mm/Kconfig`.
+
+### 4.1 Correções aplicadas após o 1º CI (failure)
+
+O build inicial (`03e61aa`) falhou com dois erros que foram corrigidos no patch:
+
+1. **`CONFIG_ZSMALLOC_CHAIN_SIZEUL`** (undeclared identifier): o zsmalloc novo
+   usa `_AC(CONFIG_ZSMALLOC_CHAIN_SIZE, UL)`, mas a config `ZSMALLOC_CHAIN_SIZE`
+   não existia no Kconfig do timisong → o token-paste virou `CHAIN_SIZEUL`.
+   **Fix:** adicionado `config ZSMALLOC_CHAIN_SIZE` (int, default 8, range 4 16)
+   ao `mm/Kconfig`.
+
+2. **`mount_pseudo()` implicit declaration**: o scarlet usa `mount_pseudo()`
+   (declarado no fs.h dele + implementado em `fs/libfs.c`), que **não existe**
+   no timisong. O timisong usa a API de `fs_context` (4.19) com `init_pseudo()`.
+   **Fix:** mantida a seção de mount do timisong original
+   (`zs_init_fs_context` → `init_pseudo(fc, ZSMALLOC_MAGIC)` + `.init_fs_context`
+   + includes `pseudo_fs.h`/`fs_context.h`), descartando a versão `mount_pseudo`
+   do scarlet.
 
 ## 5. Validação
 
@@ -74,8 +93,10 @@ alioth, branch `magictime-tiny`), passando do modelo antigo (lock por zspage via
 
 ## 6. Config necessária
 
-Nenhuma mudança adicional — `CONFIG_ZSMALLOC=y` já está habilitada no
-fragment `droidspaces.config` e no `magictime-common.config`.
+- `CONFIG_ZSMALLOC=y` já habilitada no fragment `droidspaces.config` e no
+  `magictime-common.config`.
+- `ZSMALLOC_CHAIN_SIZE` nova config (default 8) — sem valor no defconfig;
+  o default do Kconfig é usado.
 
 ## 7. Ganho esperado
 
