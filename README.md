@@ -1,5 +1,11 @@
 <div align="center">
 
+[**🇧🇷 Português**](README.md) · [**🇺🇸 English**](README.en.md)
+
+</div>
+
+<div align="center">
+
 # ⚡ Pulsar Kernel
 
 **Kernel de performance para POCO F3 / Xiaomi Mi 11 (alioth)** — base `4.19.404-R` (staging-bpf)
