@@ -140,8 +140,9 @@ jobs:
           - driver ntsync (Wine/Proton) - nativo
           - KernelSU-Next (rsuntk/KernelSU submodule do e404) - nativo
           - io_uring (v5.1 backport, patches-e404)
+          - Multi-Gen LRU (MGLRU) backport para a base e404 (patches-e404/mglru, CONFIG_LRU_GEN=y)
           - zram com compressor zstd default
-          - configs DroidSpaces (sem MGLRU nesta iteracao)
+          - configs DroidSpaces
 
           Flash via TWRP/recovery."
           echo "Release: https://github.com/${{ github.repository }}/releases/tag/$RELEASE"
