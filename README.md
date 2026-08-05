@@ -25,9 +25,6 @@ Multi-Gen LRU · ntsync · BPF backports · KernelSU · io_uring
 O Pulsar nasce de uma base SM8250 madura — ~79 releases acima do upstream
 `4.19.325` — com **eBPF 5.10/5.15**, MGLRU nativo e suporte a Android 16/17.
 
-Foi escolhida depois de testes diretos: é a única base testada com **USB/MTP
-funcionando e fluidez superior** no conjunto do projeto.
-
 ## 🚀 Features
 
 | Recurso | Descrição |
