@@ -83,7 +83,7 @@ Backports live in `patches-e404/`, each documented and auditable in its own
 - [**kvsnr113**](https://github.com/kvsnr113) — `xiaomi_sm8250_kernel_e404` source (staging-bpf)
 - [**rsuntk**](https://github.com/rsuntk) — KernelSU
 - [**ZyCromerZ**](https://github.com/ZyCromerZ) — Clang toolchain
-- **DroidSpaces** — the container infrastructure guiding the kernel choices
+- [**ravindu644**](https://github.com/ravindu644) — author of DroidSpaces ([Droidspaces-OSS](https://github.com/ravindu644/Droidspaces-OSS)), the container infrastructure guiding the kernel choices
 
 ## ⚠️ Disclaimer
 

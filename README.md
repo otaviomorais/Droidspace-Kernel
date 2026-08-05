@@ -82,7 +82,7 @@ documentado e auditável.
 - [**kvsnr113**](https://github.com/kvsnr113) — fonte `xiaomi_sm8250_kernel_e404` (staging-bpf)
 - [**rsuntk**](https://github.com/rsuntk) — KernelSU
 - [**ZyCromerZ**](https://github.com/ZyCromerZ) — toolchain Clang
-- **DroidSpaces** — infraestrutura de container que guia as escolhas do kernel
+- [**ravindu644**](https://github.com/ravindu644) — autor do DroidSpaces ([Droidspaces-OSS](https://github.com/ravindu644/Droidspaces-OSS)), a infraestrutura de container que guia as escolhas do kernel
 
 ## ⚠️ Aviso
 
