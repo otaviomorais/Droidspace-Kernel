@@ -1,0 +1,84 @@
+From: Pulsar <pulsar@local>
+Subject: dma-buf: heaps: add .map/.unmap dma_buf_ops for 4.19 (e404)
+
+The e404 4.19 tree dma_buf_export() requires exp_info->ops->map to be
+non-NULL (the 5.6+ code dropped .map/.unmap). Without it, every
+DMA_HEAP_IOCTL_ALLOC fails with -EINVAL (WARN_ON is a no-op there since
+CONFIG_BUG is off, so the failure is silent). Provide kmap/kunmap
+implementations for system_heap (via sg_table) and cma_heap (via
+buffer->pages[]).
+
+diff --git a/drivers/dma-buf/heaps/system_heap.c b/drivers/dma-buf/heaps/system_heap.c
+--- a/drivers/dma-buf/heaps/system_heap.c
++++ b/drivers/dma-buf/heaps/system_heap.c
+@@ -270,6 +270,26 @@
+ 	return vaddr;
+ }
+ 
++static void *system_heap_kmap(struct dma_buf *dmabuf, unsigned long pgnum)
++{
++	struct system_heap_buffer *buffer = dmabuf->priv;
++	struct sg_table *table = &buffer->sg_table;
++	struct sg_page_iter piter;
++	struct page *page;
++
++	for_each_sgtable_page(table, &piter, pgnum) {
++		page = sg_page_iter_page(&piter);
++		return kmap(page);
++	}
++	return NULL;
++}
++
++static void system_heap_kunmap(struct dma_buf *dmabuf,
++			       unsigned long pgnum, void *addr)
++{
++	kunmap(addr);
++}
++
+ static void *system_heap_vmap(struct dma_buf *dmabuf)
+ {
+ 	struct system_heap_buffer *buffer = dmabuf->priv;
+@@ -391,6 +391,8 @@
+ 	.unmap_dma_buf = system_heap_unmap_dma_buf,
+ 	.begin_cpu_access = system_heap_dma_buf_begin_cpu_access,
+ 	.end_cpu_access = system_heap_dma_buf_end_cpu_access,
++	.map = system_heap_kmap,
++	.unmap = system_heap_kunmap,
+ 	.mmap = system_heap_mmap,
+ 	.vmap = system_heap_vmap,
+ 	.vunmap = system_heap_vunmap,
+diff --git a/drivers/dma-buf/heaps/cma_heap.c b/drivers/dma-buf/heaps/cma_heap.c
+--- a/drivers/dma-buf/heaps/cma_heap.c
++++ b/drivers/dma-buf/heaps/cma_heap.c
+@@ -203,6 +203,22 @@
+ 	return vaddr;
+ }
+ 
++static void *cma_heap_kmap(struct dma_buf *dmabuf, unsigned long pgnum)
++{
++	struct cma_heap_buffer *buffer = dmabuf->priv;
++
++	if (pgnum >= buffer->pagecount)
++		return NULL;
++
++	return kmap(buffer->pages[pgnum]);
++}
++
++static void cma_heap_kunmap(struct dma_buf *dmabuf,
++			    unsigned long pgnum, void *addr)
++{
++	kunmap(addr);
++}
++
+ static void *cma_heap_vmap(struct dma_buf *dmabuf)
+ {
+ 	struct cma_heap_buffer *buffer = dmabuf->priv;
+@@ -279,6 +279,8 @@
+ 	.unmap_dma_buf = cma_heap_unmap_dma_buf,
+ 	.begin_cpu_access = cma_heap_dma_buf_begin_cpu_access,
+ 	.end_cpu_access = cma_heap_dma_buf_end_cpu_access,
++	.map = cma_heap_kmap,
++	.unmap = cma_heap_kunmap,
+ 	.mmap = cma_heap_mmap,
+ 	.vmap = cma_heap_vmap,
+ 	.vunmap = cma_heap_vunmap,
