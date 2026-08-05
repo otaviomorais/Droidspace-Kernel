@@ -335,7 +335,7 @@ index 0000000..26d59b4
 +struct dma_heap *dma_heap_add(const struct dma_heap_export_info *exp_info)
 +{
 +	struct dma_heap *heap, *err_ret;
-+	unsigned int minor;
++	unsigned int minor = 0;
 +	int ret;
 +
 +	if (!exp_info->name || !strcmp(exp_info->name, "")) {
