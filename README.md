@@ -4,7 +4,7 @@
 
 **Kernel de performance para POCO F3 / Xiaomi Mi 11 (alioth)** — base `4.19.404-R` (staging-bpf)
 
-Multi-Gen LRU · ntsync · BPF backports · KernelSU-Next · io_uring
+Multi-Gen LRU · ntsync · BPF backports · KernelSU · io_uring
 
 [![Release](https://img.shields.io/badge/release-v1.0.0-blue)](https://github.com/otaviomorais/Pulsar-Kernel/releases)
 [![Build](https://img.shields.io/badge/build-GitHub%20Actions-2088FF)](https://github.com/otaviomorais/Pulsar-Kernel/actions)
