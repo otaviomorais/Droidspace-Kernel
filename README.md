@@ -74,7 +74,9 @@ documentado e auditável.
 
 ## 🙏 Créditos
 
-- [**timisong**](https://github.com/TIMISONG-dev) — base MagicTime e template AnyKernel3
+- [**timisong**](https://github.com/TIMISONG-dev) — base MagicTime (kernel track antiga)
+- [**kvsnr113**](https://github.com/kvsnr113) — base E404 e template AnyKernel3 do nosso instalador
+- [**osm0sis**](https://github.com/osm0sis) — AnyKernel3 (framework do instalador)
 - [**kvsnr113**](https://github.com/kvsnr113) — fonte do kernel base SM8250 (staging-bpf)
 - [**rsuntk**](https://github.com/rsuntk) — KernelSU
 - [**ZyCromerZ**](https://github.com/ZyCromerZ) — toolchain Clang

@@ -106,14 +106,14 @@ jobs:
           cp out/arch/arm64/boot/dtbo.img out/pack/dtbo.img
           ls -la out/pack/
 
-      - name: Package AnyKernel (MagicTime template)
+      - name: Package AnyKernel (Pulsar AK3)
         run: |
-          git clone --depth 1 https://github.com/TIMISONG-dev/MagicTime-alioth.git mt
-          cp kernel/out/pack/Image mt/Image
-          cp kernel/out/pack/dtb mt/dtb
-          cp kernel/out/pack/dtbo.img mt/dtbo.img
-          cd mt
-          rm -rf .git
+          mkdir -p ak
+          cp -r "$GITHUB_WORKSPACE/droidspace/anykernel/." ak/
+          cp kernel/out/pack/Image ak/Image
+          cp kernel/out/pack/dtb ak/dtb
+          cp kernel/out/pack/dtbo.img ak/dtbo.img
+          cd ak
           ZIP="Pulsar-${DEVICE}-$(date +%Y%m%d-%H%M).zip"
           zip -r9 "$ZIP" . -x '*.git*'
           mv "$ZIP" "$GITHUB_WORKSPACE/"

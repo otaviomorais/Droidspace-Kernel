@@ -74,7 +74,9 @@ Backports live in `patches/`, each documented and auditable in its own
 
 ## 🙏 Credits
 
-- [**timisong**](https://github.com/TIMISONG-dev) — MagicTime base and AnyKernel3 template
+- [**timisong**](https://github.com/TIMISONG-dev) — MagicTime base (old kernel track)
+- [**kvsnr113**](https://github.com/kvsnr113) — E404 base and AnyKernel3 template for our installer
+- [**osm0sis**](https://github.com/osm0sis) — AnyKernel3 (installer framework)
 - [**kvsnr113**](https://github.com/kvsnr113) — SM8250 kernel base source (staging-bpf)
 - [**rsuntk**](https://github.com/rsuntk) — KernelSU
 - [**ZyCromerZ**](https://github.com/ZyCromerZ) — Clang toolchain
