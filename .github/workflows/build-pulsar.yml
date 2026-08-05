@@ -133,16 +133,18 @@ jobs:
         run: |
           ZIP="$(ls "$GITHUB_WORKSPACE"/Pulsar-*.zip)"
           RELEASE="v1.0.0-$(date +%Y%m%d-%H%M)"
+          # Changelog: commits desde a última release (se existir)
+          LAST_TAG="$(gh release list --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null || true)"
+          if [ -n "$LAST_TAG" ] && [ "$LAST_TAG" != "$RELEASE" ]; then
+            CHANGES="$(gh api "repos/${{ github.repository }}/compare/${LAST_TAG}...${GITHUB_SHA}" \
+              --jq '.commits[].commit.message | split("\n")[0]' 2>/dev/null | sed 's/^/- /' || true)"
+            printf '## O que mudou desde %s\n\n%s\n\n---\n**Base**: 4.19.404 — **Dispositivo**: %s\n\nFlash via TWRP/recovery.\n' \
+              "$LAST_TAG" "$CHANGES" "$DEVICE" > NOTES.md
+          else
+            printf '**Primeira release Pulsar para %s** (base 4.19.404) com:\n- BPF backport 5.10/5.15 + spoof uname (suporte a ROMs A16/A17)\n- driver ntsync (Wine/Proton) - nativo\n- KernelSU-Next (rsuntk/KernelSU) - nativo\n- io_uring (v5.1 backport)\n- Multi-Gen LRU (MGLRU) backport (CONFIG_LRU_GEN=y)\n- zram com compressor zstd default\n- configs DroidSpaces\n\nFlash via TWRP/recovery.\n' \
+              "$DEVICE" > NOTES.md
+          fi
           gh release create "$RELEASE" "$ZIP" \
             --title "Pulsar v1.0.0 — ${DEVICE} $(date +%Y%m%d-%H%M)" \
-            --notes "Build do kernel Pulsar (base 4.19.404) para $DEVICE com:
-          - BPF backport 5.10/5.15 + spoof uname (suporte a ROMs A16/A17)
-          - driver ntsync (Wine/Proton) - nativo
-          - KernelSU-Next (rsuntk/KernelSU) - nativo
-          - io_uring (v5.1 backport)
-          - Multi-Gen LRU (MGLRU) backport (CONFIG_LRU_GEN=y)
-          - zram com compressor zstd default
-          - configs DroidSpaces
-
-          Flash via TWRP/recovery."
+            --notes-file NOTES.md
           echo "Release: https://github.com/${{ github.repository }}/releases/tag/$RELEASE"
