@@ -30,14 +30,10 @@ funcionando e fluidez superior** no conjunto do projeto.
 | **MGLRU** | Multi-Gen LRU backportado com eviction control — menos jank, multitarefa mais fluida |
 | **ntsync** | Emulação de primitivas de sincronização do Windows — Wine/Proton/Winlator mais rápidos |
 | **BPF 5.10/5.15 + spoof uname** | Suporte a ROMs Android 16/17 e tooling moderno |
-| **KernelSU-Next** | Root integrado, sem alterar o boot image externamente |
+| **KernelSU** | Root integrado, sem alterar o boot image externamente |
 | **io_uring** | Backport v5.1 — I/O assíncrono de baixa latência |
 | **zram + zstd** | Compressor zstd padrão — swap mais compacto e rápido |
 | **CGROUPS (DroidSpaces)** | Device/PIDs/sched/freezer habilitados para o container Android |
-
-Tudo isso com a configuração mínima da base: **sem CFI/LTO/SCS** (mantém o
-`wlan.ko` da vendor funcionando), sem `DEBUG_FS` quebrado e sem hacks que
-sujem o build.
 
 ## 📲 Instalação
 
