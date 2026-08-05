@@ -1,4 +1,4 @@
-name: Build POCO F3 kernel (e404 staging-bpf + io_uring + DroidSpaces)
+name: Build Pulsar Kernel (alioth · e404)
 
 on:
   workflow_dispatch:
@@ -22,7 +22,7 @@ jobs:
     env:
       DEVICE: ${{ github.event.inputs.device || 'alioth' }}
     steps:
-      - name: Checkout patches (Droidspace-Kernel)
+      - name: Checkout patches (Pulsar-Kernel)
         uses: actions/checkout@v4
         with:
           path: droidspace
@@ -78,7 +78,7 @@ jobs:
         run: |
           cd kernel
           export ARCH=arm64
-          export KBUILD_BUILD_USER=Droidspace
+          export KBUILD_BUILD_USER=Pulsar
           export KBUILD_BUILD_HOST=github-actions
           make O=out LLVM=1 LLVM_IAS=1 HOSTCC=gcc PYTHON=python3 \
             CROSS_COMPILE=aarch64-linux-gnu- vendor/alioth_defconfig
@@ -89,7 +89,7 @@ jobs:
         run: |
           cd kernel
           export ARCH=arm64
-          export KBUILD_BUILD_USER=Droidspace
+          export KBUILD_BUILD_USER=Pulsar
           export KBUILD_BUILD_HOST=github-actions
           make -j"$(nproc)" O=out LLVM=1 LLVM_IAS=1 HOSTCC=gcc PYTHON=python3 \
             CROSS_COMPILE=aarch64-linux-gnu- \
@@ -114,15 +114,15 @@ jobs:
           cp kernel/out/pack/dtbo.img mt/dtbo.img
           cd mt
           rm -rf .git
-          ZIP="MagicTime-${DEVICE}-Droidspace-e404-$(date +%Y%m%d-%H%M).zip"
+          ZIP="Pulsar-${DEVICE}-e404-$(date +%Y%m%d-%H%M).zip"
           zip -r9 "$ZIP" . -x '*.git*'
           mv "$ZIP" "$GITHUB_WORKSPACE/"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MagicTime-${{ env.DEVICE }}-Droidspace-e404
-          path: MagicTime-*.zip
+          name: Pulsar-${{ env.DEVICE }}-e404
+          path: Pulsar-*.zip
           if-no-files-found: error
 
       - name: Create Release
@@ -131,11 +131,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          ZIP="$(ls "$GITHUB_WORKSPACE"/MagicTime-*.zip)"
-          RELEASE="kernel-e404-$(date +%Y%m%d-%H%M)"
+          ZIP="$(ls "$GITHUB_WORKSPACE"/Pulsar-*.zip)"
+          RELEASE="v1.0.0-$(date +%Y%m%d-%H%M)"
           gh release create "$RELEASE" "$ZIP" \
-            --title "MagicTime ${DEVICE} Droidspace (e404 staging-bpf) $(date +%Y%m%d-%H%M)" \
-            --notes "Build do kernel a partir da fonte kvsnr113/xiaomi_sm8250_kernel_e404 (branch staging-bpf, 4.19.404-R) para $DEVICE com:
+            --title "Pulsar v1.0.0 — ${DEVICE} (e404 staging-bpf) $(date +%Y%m%d-%H%M)" \
+            --notes "Build do kernel Pulsar a partir da fonte kvsnr113/xiaomi_sm8250_kernel_e404 (branch staging-bpf, 4.19.404-R) para $DEVICE com:
           - BPF backport 5.10/5.15 + spoof uname (suporte a ROMs A16/A17)
           - driver ntsync (Wine/Proton) - nativo
           - KernelSU-Next (rsuntk/KernelSU submodule do e404) - nativo

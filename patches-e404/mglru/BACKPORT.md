@@ -3,7 +3,7 @@
 Registro do backport do MGLRU para a base e404
 (`kvsnr113/xiaomi_sm8250_kernel_e404`, branch `staging-bpf`, 4.19.404-R) e da
 entrega como `patches-e404/mglru/0001-mglru-e404.patch` no repo
-`Droidspace-Kernel`.
+`Pulsar-Kernel`.
 
 ## 1. Contexto
 
