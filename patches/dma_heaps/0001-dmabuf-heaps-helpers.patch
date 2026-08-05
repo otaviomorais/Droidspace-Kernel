@@ -1,0 +1,160 @@
+diff --git a/include/linux/dma-mapping.h b/include/linux/dma-mapping.h
+index 8f02034..cd4e983 100644
+--- a/include/linux/dma-mapping.h
++++ b/include/linux/dma-mapping.h
+@@ -488,6 +488,85 @@ dma_sync_sg_for_device(struct device *dev, struct scatterlist *sg,
+ 
+ }
+ 
++/**
++ * dma_map_sgtable - Map the given buffer for DMA
++ * @dev:	The device for which to perform the DMA operation
++ * @sgt:	The sg_table object describing the buffer
++ * @dir:	DMA direction
++ * @attrs:	Optional DMA attributes for the map operation
++ *
++ * Maps a buffer described by a scatterlist stored in the given sg_table
++ * object for the @dir DMA operation by the @dev device. After success the
++ * ownership for the buffer is transferred to the DMA domain.  One has to
++ * call dma_sync_sgtable_for_cpu() or dma_unmap_sgtable() to move the
++ * ownership of the buffer back to the CPU domain before touching the
++ * buffer by the CPU.
++ *
++ * Returns 0 on success or -EINVAL on error during mapping the buffer.
++ */
++static inline int dma_map_sgtable(struct device *dev, struct sg_table *sgt,
++		enum dma_data_direction dir, unsigned long attrs)
++{
++	int nents;
++
++	nents = dma_map_sg_attrs(dev, sgt->sgl, sgt->orig_nents, dir, attrs);
++	if (nents <= 0)
++		return -EINVAL;
++	sgt->nents = nents;
++	return 0;
++}
++
++/**
++ * dma_unmap_sgtable - Unmap the given buffer for DMA
++ * @dev:	The device for which to perform the DMA operation
++ * @sgt:	The sg_table object describing the buffer
++ * @dir:	DMA direction
++ * @attrs:	Optional DMA attributes for the unmap operation
++ *
++ * Unmaps a buffer described by a scatterlist stored in the given sg_table
++ * object for the @dir DMA operation by the @dev device. After this function
++ * the ownership of the buffer is transferred back to the CPU domain.
++ */
++static inline void dma_unmap_sgtable(struct device *dev, struct sg_table *sgt,
++		enum dma_data_direction dir, unsigned long attrs)
++{
++	dma_unmap_sg_attrs(dev, sgt->sgl, sgt->orig_nents, dir, attrs);
++}
++
++/**
++ * dma_sync_sgtable_for_cpu - Synchronize the given buffer for CPU access
++ * @dev:	The device for which to perform the DMA operation
++ * @sgt:	The sg_table object describing the buffer
++ * @dir:	DMA direction
++ *
++ * Performs the needed cache synchronization and moves the ownership of the
++ * buffer back to the CPU domain, so it is safe to perform any access to it
++ * by the CPU. Before doing any further DMA operations, one has to transfer
++ * the ownership of the buffer back to the DMA domain by calling the
++ * dma_sync_sgtable_for_device().
++ */
++static inline void dma_sync_sgtable_for_cpu(struct device *dev,
++		struct sg_table *sgt, enum dma_data_direction dir)
++{
++	dma_sync_sg_for_cpu(dev, sgt->sgl, sgt->orig_nents, dir);
++}
++
++/**
++ * dma_sync_sgtable_for_device - Synchronize the given buffer for DMA
++ * @dev:	The device for which to perform the DMA operation
++ * @sgt:	The sg_table object describing the buffer
++ * @dir:	DMA direction
++ *
++ * Performs the needed cache synchronization and moves the ownership of the
++ * buffer back to the DMA domain, so it is safe to perform the DMA operation.
++ * Once finished, one has to call dma_sync_sgtable_for_cpu() or
++ * dma_unmap_sgtable().
++ */
++static inline void dma_sync_sgtable_for_device(struct device *dev,
++		struct sg_table *sgt, enum dma_data_direction dir)
++{
++	dma_sync_sg_for_device(dev, sgt->sgl, sgt->orig_nents, dir);
++}
+ #define dma_map_single(d, a, s, r) dma_map_single_attrs(d, a, s, r, 0)
+ #define dma_unmap_single(d, a, s, r) dma_unmap_single_attrs(d, a, s, r, 0)
+ #define dma_map_sg(d, s, n, r) dma_map_sg_attrs(d, s, n, r, 0)
+diff --git a/include/linux/mm.h b/include/linux/mm.h
+index 16fe5f9..dabcd13 100644
+--- a/include/linux/mm.h
++++ b/include/linux/mm.h
+@@ -805,6 +805,13 @@ static inline void set_compound_order(struct page *page, unsigned int order)
+ 	page[1].compound_order = order;
+ }
+ 
++/* Returns the number of bytes in this potentially compound page. */
++static inline unsigned long page_size(struct page *page)
++{
++	return PAGE_SIZE << compound_order(page);
++}
++
++
+ void free_compound_page(struct page *page);
+ 
+ #ifdef CONFIG_MMU
+diff --git a/include/linux/scatterlist.h b/include/linux/scatterlist.h
+index 093aa57..5d7f81c 100644
+--- a/include/linux/scatterlist.h
++++ b/include/linux/scatterlist.h
+@@ -150,6 +150,47 @@ static inline void sg_set_buf(struct scatterlist *sg, const void *buf,
+  */
+ #define for_each_sg(sglist, sg, nr, __i)	\
+ 	for (__i = 0, sg = (sglist); __i < (nr); __i++, sg = sg_next(sg))
++/*
++ * Loop over each sg element in the given sg_table object.
++ */
++#define for_each_sgtable_sg(sgt, sg, i)		\
++	for_each_sg(sgt->sgl, sg, sgt->orig_nents, i)
++
++/*
++ * Loop over each sg element in the given *DMA mapped* sg_table object.
++ * Please use sg_dma_address(sg) and sg_dma_len(sg) to extract DMA addresses
++ * of the each element.
++ */
++#define for_each_sgtable_dma_sg(sgt, sg, i)	\
++	for_each_sg(sgt->sgl, sg, sgt->nents, i)
++
++/**
++ * for_each_sgtable_page - iterate over all pages in the sg_table object
++ * @sgt:	sg_table object to iterate over
++ * @piter:	page iterator to hold current page
++ * @pgoffset:	starting page offset (in pages)
++ *
++ * Iterates over the all memory pages in the buffer described by
++ * a scatterlist stored in the given sg_table object.
++ * See also for_each_sg_page(). In each loop it operates on PAGE_SIZE unit.
++ */
++#define for_each_sgtable_page(sgt, piter, pgoffset)	\
++	for_each_sg_page(sgt->sgl, piter, sgt->orig_nents, pgoffset)
++
++/**
++ * for_each_sgtable_dma_page - iterate over the DMA mapped sg_table object
++ * @sgt:	sg_table object to iterate over
++ * @dma_iter:	DMA page iterator to hold current page
++ * @pgoffset:	starting page offset (in pages)
++ *
++ * Iterates over the all DMA mapped pages in the buffer described by
++ * a scatterlist stored in the given sg_table object.
++ * See also for_each_sg_dma_page(). In each loop it operates on PAGE_SIZE
++ * unit.
++ */
++#define for_each_sgtable_dma_page(sgt, dma_iter, pgoffset)	\
++	for_each_sg_dma_page(sgt->sgl, dma_iter, sgt->nents, pgoffset)
++
+ 
+ /**
+  * sg_chain - Chain two sglists together
