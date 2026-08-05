@@ -367,8 +367,8 @@ index 0000000..26d59b4
 +	heap->priv = exp_info->priv;
 +
 +	/* Find unused minor number */
-+	ret = xa_alloc(&dma_heap_minors, &minor, heap,
-+		       XA_LIMIT(0, NUM_HEAP_MINORS - 1), GFP_KERNEL);
++	ret = xa_alloc(&dma_heap_minors, &minor, NUM_HEAP_MINORS - 1, heap,
++		       GFP_KERNEL);
 +	if (ret < 0) {
 +		pr_err("dma_heap: Unable to get minor number for heap\n");
 +		err_ret = ERR_PTR(ret);
