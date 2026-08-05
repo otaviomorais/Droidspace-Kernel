@@ -8,7 +8,7 @@
 
 # ⚡ Pulsar Kernel
 
-**Kernel de performance para POCO F3 / Xiaomi Mi 11 (alioth)** — base `4.19.404-R` (staging-bpf)
+**Kernel de performance para POCO F3 / Xiaomi Mi 11 (alioth)**
 
 Multi-Gen LRU · ntsync · BPF backports · KernelSU · io_uring
 
@@ -22,9 +22,8 @@ Multi-Gen LRU · ntsync · BPF backports · KernelSU · io_uring
 
 ## ✨ Sobre
 
-O Pulsar nasce da base **e404** (`kvsnr113/xiaomi_sm8250_kernel_e404`, branch
-`staging-bpf`), a mais completa para o SM8250: ~79 releases acima do upstream
-`4.19.325`, com **eBPF 5.10/5.15**, MGLRU nativo e suporte a Android 16/17.
+O Pulsar nasce de uma base SM8250 madura — ~79 releases acima do upstream
+`4.19.325` — com **eBPF 5.10/5.15**, MGLRU nativo e suporte a Android 16/17.
 
 Foi escolhida depois de testes diretos: é a única base testada com **USB/MTP
 funcionando e fluidez superior** no conjunto do projeto.
@@ -52,7 +51,7 @@ funcionando e fluidez superior** no conjunto do projeto.
 
 ## 🔨 Build
 
-O build roda no **GitHub Actions** (`build-e404.yml`, disparo manual) ou manualmente:
+O build roda no **GitHub Actions** (`build-pulsar.yml`, disparo manual) ou manualmente:
 
 ```bash
 export ARCH=arm64 LLVM=1 LLVM_IAS=1
@@ -62,24 +61,24 @@ make -j$(nproc) O=out LLVM=1 LLVM_IAS=1 HOSTCC=gcc PYTHON=python3 CROSS_COMPILE=
   CC=clang LD=ld.lld AS=llvm-as AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip
 ```
 
-Os backports vão em `patches-e404/` com registro em `BACKPORT.md` — cada um é
+Os backports vão em `patches/` com registro em `BACKPORT.md` — cada um é
 documentado e auditável.
 
 ## 📁 Estrutura
 
 ```
-├── configs/            # fragmentos de config (droidspace-e404.config)
-├── patches-e404/
+├── configs/            # fragmentos de config (droidspace.config)
+├── patches/
 │   ├── droidspaces/    # fix cgroup para o container Android
 │   ├── io_uring/       # backport v5.1
 │   └── mglru/          # backport MGLRU + registro
-└── .github/workflows/  # build-e404.yml (GitHub Actions)
+└── .github/workflows/  # build-pulsar.yml (GitHub Actions)
 ```
 
 ## 🙏 Créditos
 
 - [**timisong**](https://github.com/TIMISONG-dev) — base MagicTime e template AnyKernel3
-- [**kvsnr113**](https://github.com/kvsnr113) — fonte `xiaomi_sm8250_kernel_e404` (staging-bpf)
+- [**kvsnr113**](https://github.com/kvsnr113) — fonte do kernel base SM8250 (staging-bpf)
 - [**rsuntk**](https://github.com/rsuntk) — KernelSU
 - [**ZyCromerZ**](https://github.com/ZyCromerZ) — toolchain Clang
 - [**ravindu644**](https://github.com/ravindu644) — autor do DroidSpaces ([Droidspaces-OSS](https://github.com/ravindu644/Droidspaces-OSS)), a infraestrutura de container que guia as escolhas do kernel

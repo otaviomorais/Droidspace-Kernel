@@ -1,19 +1,19 @@
-# Backport do Multi-Gen LRU (MGLRU) para o e404 (staging-bpf)
+# Backport do Multi-Gen LRU (MGLRU) para a base do Pulsar (staging-bpf)
 
-Registro do backport do MGLRU para a base e404
-(`kvsnr113/xiaomi_sm8250_kernel_e404`, branch `staging-bpf`, 4.19.404-R) e da
-entrega como `patches-e404/mglru/0001-mglru-e404.patch` no repo
+Registro do backport do MGLRU para a base do Pulsar
+(branch `staging-bpf`, kernel 4.19.404) e da
+entrega como `patches/mglru/0001-mglru.patch` no repo
 `Pulsar-Kernel`.
 
 ## 1. Contexto
 
 O usuário migrou do kernel MagicTime (base timisong `e764f7231`, onde o MGLRU
-já rodava via `patches/mglru/0001-mglru.patch`) para o e404 (base `staging-bpf`),
+já rodava via `patches/mglru/0001-mglru.patch`) para a nova base (`staging-bpf`),
 que tem swap cache em **xarray** e pagewalk **ops-based**. O patch original foi
 testado na base timisong; 13 de 47 arquivos falharam no `git apply --reject` no
-e404, sem conflito conceitual — só contexto divergente.
+na nova base, sem conflito conceitual — só contexto divergente.
 
-Diferenças relevantes do e404 vs timisong:
+Diferenças relevantes da nova base vs timisong:
 - `mmap_sem` (não `mmap_lock`).
 - `__delete_from_swap_cache(page, entry)` com xarray (não `(page)` com
   radix-tree).
@@ -22,7 +22,7 @@ Diferenças relevantes do e404 vs timisong:
   (não `struct mm_walk` em `include/linux/mm.h`); assinatura
   `walk_page_range(mm, start, end, ops, private)`.
 
-## 2. Resoluções manuais dos rejects (e404)
+## 2. Resoluções manuais dos rejects
 
 | Arquivo | Resolução |
 |---|---|
@@ -38,13 +38,13 @@ Diferenças relevantes do e404 vs timisong:
 | `mm/swap_state.c` + `include/linux/swap.h` | adaptação xarray (ver seção 3) |
 | `mm/swap.c` | `lru_deactivate_fn` convertido para a API 2-arg (`del/add_page_to_lru_list(page, lruvec)`) |
 
-**Pulados** (desnecessários no e404 — swap cache é xarray, não radix-tree):
+**Pulados** (desnecessários na nova base — swap cache é xarray, não radix-tree):
 - `lib/radix-tree.c` (export `__radix_tree_create`)
 - `include/linux/radix-tree.h` (protótipo)
 
 ## 3. Adaptação xarray do swap cache (shadow entries)
 
-O e404 já usa `xa_store`/`XA_STATE` em `add_to_swap_cache`/`__delete_from_swap_cache`
+A nova base já usa `xa_store`/`XA_STATE` em `add_to_swap_cache`/`__delete_from_swap_cache`
 (estrutura do commit upstream `3852f6768ede` "mm/swapcache: support to handle
 the shadow entries"), então a série do patch original (que esperava
 `__add_to_swap_cache(page, entry, shadowp)` via radix-tree) foi reaplicada no
@@ -69,7 +69,7 @@ padrão xarray:
 - `git apply --check --reverse` do patch sobre a árvore modificada passa limpo
   (≡ aplica forward em checkout fresco).
 - Build local completo (Clang 18, `vendor/alioth_defconfig` + fragment
-  `droidspace-e404.config` com `CONFIG_LRU_GEN=y`/`CONFIG_LRU_GEN_ENABLED=y`):
+  `droidspace.config` com `CONFIG_LRU_GEN=y`/`CONFIG_LRU_GEN_ENABLED=y`):
   `Image`/`vmlinux` gerados sem erro.
 - Símbolos MGLRU presentes no vmlinux: `lru_gen_eviction`, `lru_gen_refault`,
   `lru_gen_look_around`, `walk_mm.mm_walk_ops`; debugfs `lru_gen` criado.
@@ -79,20 +79,20 @@ padrão xarray:
 
 ## 5. Entrega
 
-- `patches-e404/mglru/0001-mglru-e404.patch` — consolidação (47 arquivos,
-  +4307/-402), gerada via `git add -A` + `git diff --cached` da árvore e404.
-- `configs/droidspace-e404.config`:
+- `patches/mglru/0001-mglru.patch` — consolidação (47 arquivos,
+  +4307/-402), gerada via `git add -A` + `git diff --cached` da árvore da base.
+- `configs/droidspace.config`:
   ```
   CONFIG_LRU_GEN=y
   CONFIG_LRU_GEN_ENABLED=y
   # CONFIG_LRU_GEN_STATS is not set
   ```
-- `.github/workflows/build-e404.yml` — notas de release atualizadas (MGLRU).
+- `.github/workflows/build-pulsar.yml` — notas de release atualizadas (MGLRU).
 
 ## 6. Estrutura local
 
-- `/tmp/dk/e404src` — árvore e404 com o MGLRU aplicado (base `68d2ad5c8`).
-- `/tmp/dk/mglru-e404-wip.patch` — patch gerado.
+- `/tmp/dk/` — árvore da base com o MGLRU aplicado (base `68d2ad5c8`).
+- `/tmp/dk/mglru-wip.patch` — patch gerado.
 - `/tmp/dk/vmscan_newblock.txt`, `/tmp/dk/vmscan_new.c`,
   `/tmp/dk/vmscan_orig_backup.c` — backups/regiões do vmscan.c durante a
   reaplicação manual.

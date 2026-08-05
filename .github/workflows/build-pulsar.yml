@@ -1,4 +1,4 @@
-name: Build Pulsar Kernel (alioth · e404)
+name: Build Pulsar Kernel (alioth)
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: kernel-build-e404
+  group: kernel-build-pulsar
   cancel-in-progress: false
 
 jobs:
@@ -34,30 +34,30 @@ jobs:
             flex bison bc zip unzip file python3 \
             libssl-dev libncurses-dev kmod
 
-      - name: Clone e404 source (staging-bpf)
+      - name: Clone kernel source (staging-bpf)
         run: |
           git clone --depth 1 --branch staging-bpf \
             https://github.com/kvsnr113/xiaomi_sm8250_kernel_e404.git kernel
 
-      - name: Checkout KernelSU submodule (rsuntk/KernelSU, pin do e404)
+      - name: Checkout KernelSU submodule (rsuntk/KernelSU)
         run: |
           cd kernel
           git submodule update --init
           ls -l drivers/kernelsu
           ls KernelSU/kernel/Kconfig
 
-      - name: Apply kernel patches (patches-e404/*/*.patch)
+      - name: Apply kernel patches (patches/*/*.patch)
         run: |
           cd kernel
           shopt -s nullglob
-          for patch in "$GITHUB_WORKSPACE"/droidspace/patches-e404/*/*.patch; do
+          for patch in "$GITHUB_WORKSPACE"/droidspace/patches/*/*.patch; do
             echo "==> Applying $patch"
             git apply --verbose "$patch"
           done
 
-      - name: Install DroidSpaces config fragment (e404)
+      - name: Install DroidSpaces config fragment
         run: |
-          cp "$GITHUB_WORKSPACE/droidspace/configs/droidspace-e404.config" \
+          cp "$GITHUB_WORKSPACE/droidspace/configs/droidspace.config" \
             kernel/arch/arm64/configs/vendor/droidspace.config
 
       - name: Download Clang 20 (ZyCromerZ)
@@ -114,14 +114,14 @@ jobs:
           cp kernel/out/pack/dtbo.img mt/dtbo.img
           cd mt
           rm -rf .git
-          ZIP="Pulsar-${DEVICE}-e404-$(date +%Y%m%d-%H%M).zip"
+          ZIP="Pulsar-${DEVICE}-$(date +%Y%m%d-%H%M).zip"
           zip -r9 "$ZIP" . -x '*.git*'
           mv "$ZIP" "$GITHUB_WORKSPACE/"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Pulsar-${{ env.DEVICE }}-e404
+          name: Pulsar-${{ env.DEVICE }}
           path: Pulsar-*.zip
           if-no-files-found: error
 
@@ -134,13 +134,13 @@ jobs:
           ZIP="$(ls "$GITHUB_WORKSPACE"/Pulsar-*.zip)"
           RELEASE="v1.0.0-$(date +%Y%m%d-%H%M)"
           gh release create "$RELEASE" "$ZIP" \
-            --title "Pulsar v1.0.0 — ${DEVICE} (e404 staging-bpf) $(date +%Y%m%d-%H%M)" \
-            --notes "Build do kernel Pulsar a partir da fonte kvsnr113/xiaomi_sm8250_kernel_e404 (branch staging-bpf, 4.19.404-R) para $DEVICE com:
+            --title "Pulsar v1.0.0 — ${DEVICE} $(date +%Y%m%d-%H%M)" \
+            --notes "Build do kernel Pulsar (base 4.19.404) para $DEVICE com:
           - BPF backport 5.10/5.15 + spoof uname (suporte a ROMs A16/A17)
           - driver ntsync (Wine/Proton) - nativo
-          - KernelSU-Next (rsuntk/KernelSU submodule do e404) - nativo
-          - io_uring (v5.1 backport, patches-e404)
-          - Multi-Gen LRU (MGLRU) backport para a base e404 (patches-e404/mglru, CONFIG_LRU_GEN=y)
+          - KernelSU-Next (rsuntk/KernelSU) - nativo
+          - io_uring (v5.1 backport)
+          - Multi-Gen LRU (MGLRU) backport (CONFIG_LRU_GEN=y)
           - zram com compressor zstd default
           - configs DroidSpaces
 
