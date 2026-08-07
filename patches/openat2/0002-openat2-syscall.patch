@@ -1,0 +1,351 @@
+diff --git a/fs/internal.h b/fs/internal.h
+index 8d0ca52e2..433826b13 100644
+--- a/fs/internal.h
++++ b/fs/internal.h
+@@ -117,6 +117,8 @@ extern struct file *do_filp_open(int dfd, struct filename *pathname,
+ 		const struct open_flags *op);
+ extern struct file *do_file_open_root(struct dentry *, struct vfsmount *,
+ 		const char *, const struct open_flags *);
++extern struct open_how build_open_how(int flags, umode_t mode);
++extern int build_open_flags(const struct open_how *how, struct open_flags *op);
+ 
+ long do_sys_ftruncate(unsigned int fd, loff_t length, int small);
+ long do_faccessat(int dfd, const char __user *filename, int mode);
+diff --git a/fs/open.c b/fs/open.c
+index b1cd798bc..feb76ac1e 100644
+--- a/fs/open.c
++++ b/fs/open.c
+@@ -961,48 +961,90 @@ struct file *open_with_fake_path(const struct path *path, int flags,
+ }
+ EXPORT_SYMBOL(open_with_fake_path);
+ 
+-static inline int build_open_flags(int flags, umode_t mode, struct open_flags *op)
++#define WILL_CREATE(flags)	(flags & (O_CREAT | __O_TMPFILE))
++#define O_PATH_FLAGS		(O_DIRECTORY | O_NOFOLLOW | O_PATH | O_CLOEXEC)
++
++inline struct open_how build_open_how(int flags, umode_t mode)
++{
++	struct open_how how = {
++		.flags = flags & VALID_OPEN_FLAGS,
++		.mode = mode & S_IALLUGO,
++	};
++
++	/* O_PATH simply doesn't care about the mode. */
++	if (how.flags & O_PATH) {
++		how.mode &= 0;
++		how.flags &= O_PATH_FLAGS;
++	}
++
++	/* Older syscalls don't understand O_TMPFILE. */
++	if (how.flags & __O_TMPFILE)
++		how.flags = (how.flags & ~O_TMPFILE_MASK) | O_TMPFILE;
++	if (!WILL_CREATE(how.flags))
++		how.mode = 0;
++
++	return how;
++}
++EXPORT_SYMBOL(build_open_how);
++
++inline int build_open_flags(const struct open_how *how, struct open_flags *op)
+ {
++	int flags = how->flags;
+ 	int lookup_flags = 0;
+ 	int acc_mode = ACC_MODE(flags);
+ 
++	/* Must never be set by userspace */
++	flags &= ~(FMODE_NONOTIFY | O_CLOEXEC);
++
+ 	/*
+-	 * Clear out all open flags we don't know about so that we don't report
+-	 * them in fcntl(F_GETFD) or similar interfaces.
++	 * Older syscalls implicitly clear all of the invalid flags or argument
++	 * values before calling build_open_flags(), but openat2(2) checks all
++	 * of its arguments.
+ 	 */
+-	flags &= VALID_OPEN_FLAGS;
++	if (flags & ~VALID_OPEN_FLAGS)
++		return -EINVAL;
++	if (how->resolve & ~VALID_RESOLVE_FLAGS)
++		return -EINVAL;
+ 
+-	if (flags & (O_CREAT | __O_TMPFILE))
+-		op->mode = (mode & S_IALLUGO) | S_IFREG;
+-	else
++	/* Deal with the mode. */
++	if (WILL_CREATE(flags)) {
++		if (how->mode & ~S_IALLUGO)
++			return -EINVAL;
++		op->mode = how->mode | S_IFREG;
++	} else {
++		if (how->mode != 0)
++			return -EINVAL;
+ 		op->mode = 0;
+-
+-	/* Must never be set by userspace */
+-	flags &= ~FMODE_NONOTIFY & ~O_CLOEXEC;
++	}
+ 
+ 	/*
+-	 * O_SYNC is implemented as __O_SYNC|O_DSYNC.  As many places only
+-	 * check for O_DSYNC if the need any syncing at all we enforce it's
+-	 * always set instead of having to deal with possibly weird behaviour
+-	 * for malicious applications setting only __O_SYNC.
++	 * In order to ensure programs get explicit errors when trying to use
++	 * O_TMPFILE on old kernels, O_TMPFILE is implemented such that it
++	 * looks like (O_DIRECTORY|O_RDWR & ~O_CREAT) to old kernels. But we
++	 * have to require userspace to explicitly set it.
+ 	 */
+-	if (flags & __O_SYNC)
+-		flags |= O_DSYNC;
+-
+ 	if (flags & __O_TMPFILE) {
+ 		if ((flags & O_TMPFILE_MASK) != O_TMPFILE)
+ 			return -EINVAL;
+ 		if (!(acc_mode & MAY_WRITE))
+ 			return -EINVAL;
+-	} else if (flags & O_PATH) {
+-		/*
+-		 * If we have O_PATH in the open flag. Then we
+-		 * cannot have anything other than the below set of flags
+-		 */
+-		flags &= O_DIRECTORY | O_NOFOLLOW | O_PATH;
++	}
++	if (flags & O_PATH) {
++		/* O_PATH only permits certain other flags to be set. */
++		if (flags & ~O_PATH_FLAGS)
++			return -EINVAL;
+ 		acc_mode = 0;
+ 	}
+ 
++	/*
++	 * O_SYNC is implemented as __O_SYNC|O_DSYNC.  As many places only
++	 * check for O_DSYNC if the need any syncing at all we enforce it's
++	 * always set instead of having to deal with possibly weird behaviour
++	 * for malicious applications setting only __O_SYNC.
++	 */
++	if (flags & __O_SYNC)
++		flags |= O_DSYNC;
++
+ 	op->open_flag = flags;
+ 
+ 	/* O_TRUNC implies we need access checks for write permissions */
+@@ -1028,6 +1070,18 @@ static inline int build_open_flags(int flags, umode_t mode, struct open_flags *o
+ 		lookup_flags |= LOOKUP_DIRECTORY;
+ 	if (!(flags & O_NOFOLLOW))
+ 		lookup_flags |= LOOKUP_FOLLOW;
++
++	if (how->resolve & RESOLVE_NO_XDEV)
++		lookup_flags |= LOOKUP_NO_XDEV;
++	if (how->resolve & RESOLVE_NO_MAGICLINKS)
++		lookup_flags |= LOOKUP_NO_MAGICLINKS;
++	if (how->resolve & RESOLVE_NO_SYMLINKS)
++		lookup_flags |= LOOKUP_NO_SYMLINKS;
++	if (how->resolve & RESOLVE_BENEATH)
++		lookup_flags |= LOOKUP_BENEATH;
++	if (how->resolve & RESOLVE_IN_ROOT)
++		lookup_flags |= LOOKUP_IN_ROOT;
++
+ 	op->lookup_flags = lookup_flags;
+ 	return 0;
+ }
+@@ -1046,8 +1100,11 @@ static inline int build_open_flags(int flags, umode_t mode, struct open_flags *o
+ struct file *file_open_name(struct filename *name, int flags, umode_t mode)
+ {
+ 	struct open_flags op;
+-	int err = build_open_flags(flags, mode, &op);
+-	return err ? ERR_PTR(err) : do_filp_open(AT_FDCWD, name, &op);
++	struct open_how how = build_open_how(flags, mode);
++	int err = build_open_flags(&how, &op);
++	if (err)
++		return ERR_PTR(err);
++	return do_filp_open(AT_FDCWD, name, &op);
+ }
+ 
+ /**
+@@ -1078,7 +1135,8 @@ struct file *file_open_root(struct dentry *dentry, struct vfsmount *mnt,
+ 			    const char *filename, int flags, umode_t mode)
+ {
+ 	struct open_flags op;
+-	int err = build_open_flags(flags, mode, &op);
++	struct open_how how = build_open_how(flags, mode);
++	int err = build_open_flags(&how, &op);
+ 	if (err)
+ 		return ERR_PTR(err);
+ 	return do_file_open_root(dentry, mnt, filename, &op);
+@@ -1138,10 +1196,11 @@ static bool libperfmgr_redirect(struct file **f, int dfd, struct filename *n,
+ 	return true;
+ }
+ 
+-long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
++static long do_sys_openat2(int dfd, const char __user *filename,
++			   struct open_how *how)
+ {
+ 	struct open_flags op;
+-	int fd = build_open_flags(flags, mode, &op);
++	int fd = build_open_flags(how, &op);
+ 	struct filename *tmp;
+ 
+ 	if (fd)
+@@ -1151,10 +1210,10 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
+ 	if (IS_ERR(tmp))
+ 		return PTR_ERR(tmp);
+ 
+-	fd = get_unused_fd_flags(flags);
++	fd = get_unused_fd_flags(how->flags);
+ 	if (fd >= 0) {
+ 		struct file *f = do_filp_open(dfd, tmp, &op);
+-		if (IS_ERR(f) && !libperfmgr_redirect(&f, dfd, tmp, &op, flags)) {
++		if (IS_ERR(f) && !libperfmgr_redirect(&f, dfd, tmp, &op, (int)how->flags)) {
+ 			put_unused_fd(fd);
+ 			fd = PTR_ERR(f);
+ 		} else {
+@@ -1166,6 +1225,12 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
+ 	return fd;
+ }
+ 
++long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
++{
++	struct open_how how = build_open_how(flags, mode);
++	return do_sys_openat2(dfd, filename, &how);
++}
++
+ SYSCALL_DEFINE3(open, const char __user *, filename, int, flags, umode_t, mode)
+ {
+ 	if (force_o_largefile())
+@@ -1183,6 +1248,29 @@ SYSCALL_DEFINE4(openat, int, dfd, const char __user *, filename, int, flags,
+ 	return do_sys_open(dfd, filename, flags, mode);
+ }
+ 
++SYSCALL_DEFINE4(openat2, int, dfd, const char __user *, filename,
++		struct open_how __user *, how, size_t, usize)
++{
++	int err;
++	struct open_how tmp;
++
++	BUILD_BUG_ON(sizeof(struct open_how) < OPEN_HOW_SIZE_VER0);
++	BUILD_BUG_ON(sizeof(struct open_how) != OPEN_HOW_SIZE_LATEST);
++
++	if (unlikely(usize < OPEN_HOW_SIZE_VER0))
++		return -EINVAL;
++
++	err = copy_struct_from_user(&tmp, sizeof(tmp), how, usize);
++	if (err)
++		return err;
++
++	/* O_LARGEFILE is only allowed for non-O_PATH. */
++	if (!(tmp.flags & O_PATH) && force_o_largefile())
++		tmp.flags |= O_LARGEFILE;
++
++	return do_sys_openat2(dfd, filename, &tmp);
++}
++
+ #ifdef CONFIG_COMPAT
+ /*
+  * Exactly like sys_open(), except that it doesn't set the
+diff --git a/include/linux/fcntl.h b/include/linux/fcntl.h
+index 27dc7a606..1d24e73fb 100644
+--- a/include/linux/fcntl.h
++++ b/include/linux/fcntl.h
+@@ -11,6 +11,15 @@
+ 	 FASYNC	| O_DIRECT | O_LARGEFILE | O_DIRECTORY | O_NOFOLLOW | \
+ 	 O_NOATIME | O_CLOEXEC | O_PATH | __O_TMPFILE)
+ 
++/* List of all valid flags for the how->resolve argument: */
++#define VALID_RESOLVE_FLAGS \
++	(RESOLVE_NO_XDEV | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_SYMLINKS | \
++	 RESOLVE_BENEATH | RESOLVE_IN_ROOT)
++
++/* List of all open_how "versions". */
++#define OPEN_HOW_SIZE_VER0	24 /* sizeof first published struct */
++#define OPEN_HOW_SIZE_LATEST	OPEN_HOW_SIZE_VER0
++
+ #ifndef force_o_largefile
+ #define force_o_largefile() (BITS_PER_LONG != 32)
+ #endif
+diff --git a/include/linux/syscalls.h b/include/linux/syscalls.h
+index ecbeb0222..263e6ad75 100644
+--- a/include/linux/syscalls.h
++++ b/include/linux/syscalls.h
+@@ -67,6 +67,8 @@ struct old_linux_dirent;
+ struct perf_event_attr;
+ struct file_handle;
+ struct sigaltstack;
++struct open_how;
++struct clone_args;
+ struct rseq;
+ union bpf_attr;
+ 
+@@ -426,6 +428,8 @@ asmlinkage long sys_fchownat(int dfd, const char __user *filename, uid_t user,
+ asmlinkage long sys_fchown(unsigned int fd, uid_t user, gid_t group);
+ asmlinkage long sys_openat(int dfd, const char __user *filename, int flags,
+ 			   umode_t mode);
++asmlinkage long sys_openat2(int dfd, const char __user *filename,
++			    struct open_how *how, size_t size);
+ asmlinkage long sys_close(unsigned int fd);
+ asmlinkage long sys_close_range(unsigned int fd, unsigned int max_fd,
+ 				unsigned int flags);
+@@ -785,6 +789,7 @@ asmlinkage long sys_clone(unsigned long, unsigned long, int __user *,
+ 	       int __user *, unsigned long);
+ #endif
+ #endif
++asmlinkage long sys_clone3(struct clone_args __user *uargs, size_t size);
+ asmlinkage long sys_execve(const char __user *filename,
+ 		const char __user *const __user *argv,
+ 		const char __user *const __user *envp);
+diff --git a/include/uapi/linux/fcntl.h b/include/uapi/linux/fcntl.h
+index a2f8658f1..9b4ecae08 100644
+--- a/include/uapi/linux/fcntl.h
++++ b/include/uapi/linux/fcntl.h
+@@ -3,6 +3,7 @@
+ #define _UAPI_LINUX_FCNTL_H
+ 
+ #include <asm/fcntl.h>
++#include <linux/openat2.h>
+ 
+ #define F_SETLEASE	(F_LINUX_SPECIFIC_BASE + 0)
+ #define F_GETLEASE	(F_LINUX_SPECIFIC_BASE + 1)
+diff --git a/include/uapi/linux/openat2.h b/include/uapi/linux/openat2.h
+new file mode 100644
+index 000000000..58b1eb711
+--- /dev/null
++++ b/include/uapi/linux/openat2.h
+@@ -0,0 +1,39 @@
++/* SPDX-License-Identifier: GPL-2.0 WITH Linux-syscall-note */
++#ifndef _UAPI_LINUX_OPENAT2_H
++#define _UAPI_LINUX_OPENAT2_H
++
++#include <linux/types.h>
++
++/*
++ * Arguments for how openat2(2) should open the target path. If only @flags and
++ * @mode are non-zero, then openat2(2) operates very similarly to openat(2).
++ *
++ * However, unlike openat(2), unknown or invalid bits in @flags result in
++ * -EINVAL rather than being silently ignored. @mode must be zero unless one of
++ * {O_CREAT, O_TMPFILE} are set.
++ *
++ * @flags: O_* flags.
++ * @mode: O_CREAT/O_TMPFILE file mode.
++ * @resolve: RESOLVE_* flags.
++ */
++struct open_how {
++	__u64 flags;
++	__u64 mode;
++	__u64 resolve;
++};
++
++/* how->resolve flags for openat2(2). */
++#define RESOLVE_NO_XDEV		0x01 /* Block mount-point crossings
++					(includes bind-mounts). */
++#define RESOLVE_NO_MAGICLINKS	0x02 /* Block traversal through procfs-style
++					"magic-links". */
++#define RESOLVE_NO_SYMLINKS	0x04 /* Block traversal through all symlinks
++					(implies OEXT_NO_MAGICLINKS) */
++#define RESOLVE_BENEATH		0x08 /* Block "lexical" trickery like
++					"..", symlinks, and absolute
++					paths which escape the dirfd. */
++#define RESOLVE_IN_ROOT		0x10 /* Make all jumps to "/" and ".."
++					be scoped inside the dirfd
++					(similar to chroot(2)). */
++
++#endif /* _UAPI_LINUX_OPENAT2_H */

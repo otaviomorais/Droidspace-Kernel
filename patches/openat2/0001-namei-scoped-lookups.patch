@@ -1,0 +1,431 @@
+diff --git a/fs/namei.c b/fs/namei.c
+index 1cc9726cb..84988e3e0 100644
+--- a/fs/namei.c
++++ b/fs/namei.c
+@@ -873,12 +873,37 @@ static int complete_walk(struct nameidata *nd)
+ 	int status;
+ 
+ 	if (nd->flags & LOOKUP_RCU) {
+-		if (!(nd->flags & LOOKUP_ROOT))
++		/*
++		 * We don't want to zero nd->root for scoped-lookups or
++		 * externally-managed nd->root.
++		 */
++		if (!(nd->flags & (LOOKUP_ROOT | LOOKUP_IS_SCOPED)))
+ 			nd->root.mnt = NULL;
+ 		if (unlikely(unlazy_walk(nd)))
+ 			return -ECHILD;
+ 	}
+ 
++	if (unlikely(nd->flags & LOOKUP_IS_SCOPED)) {
++		/*
++		 * While the guarantee of LOOKUP_IS_SCOPED is (roughly) "don't
++		 * ever step outside the root during lookup" and should already
++		 * be guaranteed by the rest of namei, we want to avoid a namei
++		 * BUG resulting in userspace being given a path that was not
++		 * scoped within the root at some point during the lookup.
++		 *
++		 * So, do a final sanity-check to make sure that in the
++		 * worst-case scenario (a complete bypass of LOOKUP_IS_SCOPED)
++		 * we won't silently return an fd completely outside of the
++		 * requested root to userspace.
++		 *
++		 * Userspace could move the path outside the root after this
++		 * check, but as discussed elsewhere this is not a concern (the
++		 * resolved file was inside the root at some point).
++		 */
++		if (!path_is_under(&nd->path, &nd->root))
++			return -EXDEV;
++	}
++
+ 	if (likely(!(nd->flags & LOOKUP_JUMPED))) {
+ 		success_walk_trace(nd);
+ 		return 0;
+@@ -901,10 +926,17 @@ static int complete_walk(struct nameidata *nd)
+ 	return status;
+ }
+ 
+-static void set_root(struct nameidata *nd)
++static int set_root(struct nameidata *nd)
+ {
+ 	struct fs_struct *fs = current->fs;
+ 
++	/*
++	 * Jumping to the real root in a scoped lookup is OK, as long as
++	 * we're not going to follow symlinks outside of the scoped root.
++	 */
++	if (WARN_ON(nd->flags & LOOKUP_IS_SCOPED))
++		return -ENOTRECOVERABLE;
++
+ 	if (nd->flags & LOOKUP_RCU) {
+ 		unsigned seq;
+ 
+@@ -915,7 +947,9 @@ static void set_root(struct nameidata *nd)
+ 		} while (read_seqcount_retry(&fs->seq, seq));
+ 	} else {
+ 		get_fs_root(fs, &nd->root);
++		nd->flags |= LOOKUP_ROOT_GRABBED;
+ 	}
++	return 0;
+ }
+ 
+ static void path_put_conditional(struct path *path, struct nameidata *nd)
+@@ -939,6 +973,18 @@ static inline void path_to_nameidata(const struct path *path,
+ 
+ static int nd_jump_root(struct nameidata *nd)
+ {
++	if (unlikely(nd->flags & LOOKUP_BENEATH))
++		return -EXDEV;
++	if (unlikely(nd->flags & LOOKUP_NO_XDEV)) {
++		/* Absolute path arguments to path_init() are allowed. */
++		if (nd->path.mnt != NULL && nd->path.mnt != nd->root.mnt)
++			return -EXDEV;
++	}
++	if (!nd->root.mnt) {
++		int error = set_root(nd);
++		if (error)
++			return error;
++	}
+ 	if (nd->flags & LOOKUP_RCU) {
+ 		struct dentry *d;
+ 		nd->path = nd->root;
+@@ -961,14 +1007,32 @@ static int nd_jump_root(struct nameidata *nd)
+  * Helper to directly jump to a known parsed path from ->get_link,
+  * caller must have taken a reference to path beforehand.
+  */
+-void nd_jump_link(struct path *path)
++int nd_jump_link(struct path *path)
+ {
++	int error = -ELOOP;
+ 	struct nameidata *nd = current->nameidata;
+-	path_put(&nd->path);
+ 
++	if (unlikely(nd->flags & LOOKUP_NO_MAGICLINKS))
++		goto err;
++
++	error = -EXDEV;
++	if (unlikely(nd->flags & LOOKUP_NO_XDEV)) {
++		if (nd->path.mnt != path->mnt)
++			goto err;
++	}
++	/* Not currently safe for scoped-lookups. */
++	if (unlikely(nd->flags & LOOKUP_IS_SCOPED))
++		goto err;
++
++	path_put(&nd->path);
+ 	nd->path = *path;
+ 	nd->inode = nd->path.dentry->d_inode;
+ 	nd->flags |= LOOKUP_JUMPED;
++	return 0;
++
++err:
++	path_put(path);
++	return error;
+ }
+ 
+ static inline void put_link(struct nameidata *nd)
+@@ -1148,6 +1212,9 @@ const char *get_link(struct nameidata *nd)
+ 	int error;
+ 	const char *res;
+ 
++	if (unlikely(nd->flags & LOOKUP_NO_SYMLINKS))
++		return ERR_PTR(-ELOOP);
++
+ 	if (!(nd->flags & LOOKUP_RCU)) {
+ 		touch_atime(&last->link);
+ 		cond_resched();
+@@ -1182,10 +1249,9 @@ const char *get_link(struct nameidata *nd)
+ 			return res;
+ 	}
+ 	if (*res == '/') {
+-		if (!nd->root.mnt)
+-			set_root(nd);
+-		if (unlikely(nd_jump_root(nd)))
+-			return ERR_PTR(-ECHILD);
++		error = nd_jump_root(nd);
++		if (unlikely(error))
++			return ERR_PTR(error);
+ 		while (unlikely(*++res == '/'))
+ 			;
+ 	}
+@@ -1366,12 +1432,16 @@ static int follow_managed(struct path *path, struct nameidata *nd)
+ 		break;
+ 	}
+ 
+-	if (need_mntput && path->mnt == mnt)
+-		mntput(path->mnt);
++	if (need_mntput) {
++		if (path->mnt == mnt)
++			mntput(path->mnt);
++		if (unlikely(nd->flags & LOOKUP_NO_XDEV))
++			ret = -EXDEV;
++		else
++			nd->flags |= LOOKUP_JUMPED;
++	}
+ 	if (ret == -EISDIR || !ret)
+ 		ret = 1;
+-	if (need_mntput)
+-		nd->flags |= LOOKUP_JUMPED;
+ 	if (unlikely(ret < 0))
+ 		path_put_conditional(path, nd);
+ 	return ret;
+@@ -1448,8 +1518,11 @@ static int follow_dotdot_rcu(struct nameidata *nd)
+ 	struct inode *inode = nd->inode;
+ 
+ 	while (1) {
+-		if (path_equal(&nd->path, &nd->root))
++		if (path_equal(&nd->path, &nd->root)) {
++			if (unlikely(nd->flags & LOOKUP_BENEATH))
++				return -ECHILD;
+ 			break;
++		}
+ 		if (nd->path.dentry != nd->path.mnt->mnt_root) {
+ 			struct dentry *old = nd->path.dentry;
+ 			struct dentry *parent = old->d_parent;
+@@ -1474,6 +1547,8 @@ static int follow_dotdot_rcu(struct nameidata *nd)
+ 				return -ECHILD;
+ 			if (&mparent->mnt == nd->path.mnt)
+ 				break;
++			if (unlikely(nd->flags & LOOKUP_NO_XDEV))
++				return -ECHILD;
+ 			/* we know that mountpoint was pinned */
+ 			nd->path.dentry = mountpoint;
+ 			nd->path.mnt = &mparent->mnt;
+@@ -1488,6 +1563,8 @@ static int follow_dotdot_rcu(struct nameidata *nd)
+ 			return -ECHILD;
+ 		if (!mounted)
+ 			break;
++		if (unlikely(nd->flags & LOOKUP_NO_XDEV))
++			return -ECHILD;
+ 		nd->path.mnt = &mounted->mnt;
+ 		nd->path.dentry = mounted->mnt.mnt_root;
+ 		inode = nd->path.dentry->d_inode;
+@@ -1576,8 +1653,11 @@ static int path_parent_directory(struct path *path)
+ static int follow_dotdot(struct nameidata *nd)
+ {
+ 	while(1) {
+-		if (path_equal(&nd->path, &nd->root))
++		if (path_equal(&nd->path, &nd->root)) {
++			if (unlikely(nd->flags & LOOKUP_BENEATH))
++				return -EXDEV;
+ 			break;
++		}
+ 		if (nd->path.dentry != nd->path.mnt->mnt_root) {
+ 			int ret = path_parent_directory(&nd->path);
+ 			if (ret)
+@@ -1586,6 +1666,8 @@ static int follow_dotdot(struct nameidata *nd)
+ 		}
+ 		if (!follow_up(&nd->path))
+ 			break;
++		if (unlikely(nd->flags & LOOKUP_NO_XDEV))
++			return -EXDEV;
+ 	}
+ 	follow_mount(&nd->path);
+ 	nd->inode = nd->path.dentry->d_inode;
+@@ -1800,12 +1882,31 @@ static inline int may_lookup(struct nameidata *nd)
+ static inline int handle_dots(struct nameidata *nd, int type)
+ {
+ 	if (type == LAST_DOTDOT) {
+-		if (!nd->root.mnt)
+-			set_root(nd);
+-		if (nd->flags & LOOKUP_RCU) {
+-			return follow_dotdot_rcu(nd);
+-		} else
+-			return follow_dotdot(nd);
++		int error = 0;
++
++		if (!nd->root.mnt) {
++			error = set_root(nd);
++			if (error)
++				return error;
++		}
++		if (nd->flags & LOOKUP_RCU)
++			error = follow_dotdot_rcu(nd);
++		else
++			error = follow_dotdot(nd);
++		if (error)
++			return error;
++
++		if (unlikely(nd->flags & LOOKUP_IS_SCOPED)) {
++			/*
++			 * If there was a racing mount along our
++			 * path, then we can't be sure that ".." hasn't jumped
++			 * above nd->root (and so userspace should retry or use
++			 * some fallback).
++			 */
++			smp_rmb();
++			if (unlikely(read_seqretry(&mount_lock, nd->m_seq)))
++				return -EAGAIN;
++		}
+ 	}
+ 	return 0;
+ }
+@@ -2266,6 +2367,7 @@ static int link_path_walk(const char *name, struct nameidata *nd)
+ /* must be paired with terminate_walk() */
+ static const char *path_init(struct nameidata *nd, unsigned flags)
+ {
++	int error;
+ 	const char *s = nd->name->name;
+ 
+ 	if (!*s)
+@@ -2298,12 +2400,17 @@ static const char *path_init(struct nameidata *nd, unsigned flags)
+ 	nd->path.dentry = NULL;
+ 
+ 	nd->m_seq = read_seqbegin(&mount_lock);
+-	if (*s == '/') {
+-		set_root(nd);
+-		if (likely(!nd_jump_root(nd)))
+-			return s;
+-		return ERR_PTR(-ECHILD);
+-	} else if (nd->dfd == AT_FDCWD) {
++
++	/* Absolute pathname -- fetch the root (LOOKUP_IN_ROOT uses nd->dfd). */
++	if (*s == '/' && !(flags & LOOKUP_IN_ROOT)) {
++		error = nd_jump_root(nd);
++		if (unlikely(error))
++			return ERR_PTR(error);
++		return s;
++	}
++
++	/* Relative pathname -- get the starting-point it is relative to. */
++	if (nd->dfd == AT_FDCWD) {
+ 		if (flags & LOOKUP_RCU) {
+ 			struct fs_struct *fs = current->fs;
+ 			unsigned seq;
+@@ -2318,7 +2425,6 @@ static const char *path_init(struct nameidata *nd, unsigned flags)
+ 			get_fs_pwd(current->fs, &nd->path);
+ 			nd->inode = nd->path.dentry->d_inode;
+ 		}
+-		return s;
+ 	} else {
+ 		/* Caller must check execute permissions on the starting path component */
+ 		struct fd f = fdget_raw(nd->dfd);
+@@ -2343,8 +2449,19 @@ static const char *path_init(struct nameidata *nd, unsigned flags)
+ 			nd->inode = nd->path.dentry->d_inode;
+ 		}
+ 		fdput(f);
+-		return s;
+ 	}
++
++	/* For scoped-lookups we need to set the root to the dirfd as well. */
++	if (flags & LOOKUP_IS_SCOPED) {
++		nd->root = nd->path;
++		if (flags & LOOKUP_RCU) {
++			nd->root_seq = nd->seq;
++		} else {
++			path_get(&nd->root);
++			nd->flags |= LOOKUP_ROOT_GRABBED;
++		}
++	}
++	return s;
+ }
+ 
+ static const char *trailing_symlink(struct nameidata *nd)
+diff --git a/fs/proc/base.c b/fs/proc/base.c
+index 0fd9794d0..5a316773b 100644
+--- a/fs/proc/base.c
++++ b/fs/proc/base.c
+@@ -1672,8 +1672,7 @@ static const char *proc_pid_get_link(struct dentry *dentry,
+ 	if (error)
+ 		goto out;
+ 
+-	nd_jump_link(&path);
+-	return NULL;
++	error = nd_jump_link(&path);
+ out:
+ 	return ERR_PTR(error);
+ }
+diff --git a/fs/proc/namespaces.c b/fs/proc/namespaces.c
+index 08dd94df1..a8cca516f 100644
+--- a/fs/proc/namespaces.c
++++ b/fs/proc/namespaces.c
+@@ -51,11 +51,15 @@ static const char *proc_ns_get_link(struct dentry *dentry,
+ 	if (!task)
+ 		return ERR_PTR(-EACCES);
+ 
+-	if (ptrace_may_access(task, PTRACE_MODE_READ_FSCREDS)) {
+-		error = ns_get_path(&ns_path, task, ns_ops);
+-		if (!error)
+-			nd_jump_link(&ns_path);
+-	}
++	if (!ptrace_may_access(task, PTRACE_MODE_READ_FSCREDS))
++		goto out;
++
++	error = ns_get_path(&ns_path, task, ns_ops);
++	if (error)
++		goto out;
++
++	error = nd_jump_link(&ns_path);
++out:
+ 	put_task_struct(task);
+ 	return ERR_PTR(error);
+ }
+diff --git a/include/linux/namei.h b/include/linux/namei.h
+index f49589746..2aae616b0 100644
+--- a/include/linux/namei.h
++++ b/include/linux/namei.h
+@@ -2,6 +2,7 @@
+ #ifndef _LINUX_NAMEI_H
+ #define _LINUX_NAMEI_H
+ 
++#include <linux/fs.h>
+ #include <linux/kernel.h>
+ #include <linux/path.h>
+ #include <linux/fcntl.h>
+@@ -28,6 +29,7 @@ enum {LAST_NORM, LAST_ROOT, LAST_DOT, LAST_DOTDOT, LAST_BIND};
+ #define LOOKUP_FOLLOW		0x0001
+ #define LOOKUP_DIRECTORY	0x0002
+ #define LOOKUP_AUTOMOUNT	0x0004
++#define LOOKUP_ROOT_GRABBED	0x0008
+ 
+ #define LOOKUP_PARENT		0x0010
+ #define LOOKUP_REVAL		0x0020
+@@ -47,6 +49,14 @@ enum {LAST_NORM, LAST_ROOT, LAST_DOT, LAST_DOTDOT, LAST_BIND};
+ #define LOOKUP_EMPTY		0x4000
+ #define LOOKUP_DOWN		0x8000
+ 
++#define LOOKUP_NO_SYMLINKS	0x010000 /* No symlink crossing. */
++#define LOOKUP_NO_MAGICLINKS	0x020000 /* No nd_jump_link() crossing. */
++#define LOOKUP_NO_XDEV		0x040000 /* No mountpoint crossing. */
++#define LOOKUP_BENEATH		0x080000 /* No escaping from starting point. */
++#define LOOKUP_IN_ROOT		0x100000 /* Treat dirfd as fs root. */
++/* LOOKUP_* flags which do scope-related checks based on the dirfd. */
++#define LOOKUP_IS_SCOPED (LOOKUP_BENEATH | LOOKUP_IN_ROOT)
++
+ extern int path_pts(struct path *path);
+ 
+ extern int user_path_at_empty(int, const char __user *, unsigned, struct path *, int *empty);
+@@ -97,7 +107,7 @@ extern int follow_up(struct path *);
+ extern struct dentry *lock_rename(struct dentry *, struct dentry *);
+ extern void unlock_rename(struct dentry *, struct dentry *);
+ 
+-extern void nd_jump_link(struct path *path);
++extern int __must_check nd_jump_link(struct path *path);
+ 
+ static inline void nd_terminate_link(void *name, size_t len, size_t maxlen)
+ {
+diff --git a/security/apparmor/apparmorfs.c b/security/apparmor/apparmorfs.c
+index cd6f3f893..c5113264a 100644
+--- a/security/apparmor/apparmorfs.c
++++ b/security/apparmor/apparmorfs.c
+@@ -2453,16 +2453,18 @@ static const char *policy_get_link(struct dentry *dentry,
+ {
+ 	struct aa_ns *ns;
+ 	struct path path;
++	int error;
+ 
+ 	if (!dentry)
+ 		return ERR_PTR(-ECHILD);
++
+ 	ns = aa_get_current_ns();
+ 	path.mnt = mntget(aafs_mnt);
+ 	path.dentry = dget(ns_dir(ns));
+-	nd_jump_link(&path);
++	error = nd_jump_link(&path);
+ 	aa_put_ns(ns);
+ 
+-	return NULL;
++	return ERR_PTR(error);
+ }
+ 
+ static int policy_readlink(struct dentry *dentry, char __user *buffer,

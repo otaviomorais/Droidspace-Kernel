@@ -1,0 +1,176 @@
+diff --git a/arch/arm64/include/asm/unistd32.h b/arch/arm64/include/asm/unistd32.h
+index 3315ff533..dc29d4dfc 100644
+--- a/arch/arm64/include/asm/unistd32.h
++++ b/arch/arm64/include/asm/unistd32.h
+@@ -823,8 +823,12 @@ __SYSCALL(__NR_rseq, sys_rseq)
+ __SYSCALL(__NR_pidfd_send_signal, sys_pidfd_send_signal)
+ #define __NR_pidfd_open 434
+ __SYSCALL(__NR_pidfd_open, sys_pidfd_open)
++#define __NR_clone3 435
++__SYSCALL(__NR_clone3, sys_clone3)
+ #define __NR_close_range 436
+ __SYSCALL(__NR_close_range, sys_close_range)
++#define __NR_openat2 437
++__SYSCALL(__NR_openat2, sys_openat2)
+ #define __NR_process_madvise 440
+ __SYSCALL(__NR_process_madvise, sys_process_madvise)
+ #define __NR_epoll_pwait2 441
+diff --git a/include/linux/sched/task.h b/include/linux/sched/task.h
+index 12216f492..4ec3b9467 100644
+--- a/include/linux/sched/task.h
++++ b/include/linux/sched/task.h
+@@ -9,6 +9,8 @@
+ 
+ #include <linux/sched.h>
+ 
++#define CLONE_LEGACY_FLAGS 0xffffffffULL
++
+ struct task_struct;
+ struct rusage;
+ union thread_union;
+diff --git a/include/uapi/linux/sched.h b/include/uapi/linux/sched.h
+index 617bb59aa..38a04bfc9 100644
+--- a/include/uapi/linux/sched.h
++++ b/include/uapi/linux/sched.h
+@@ -31,6 +31,50 @@
+ #define CLONE_NEWNET		0x40000000	/* New network namespace */
+ #define CLONE_IO		0x80000000	/* Clone io context */
+ 
++#ifndef __ASSEMBLY__
++/**
++ * struct clone_args - arguments for the clone3 syscall
++ * @flags:        Flags for the new process as listed above.
++ *                All flags are valid except for CSIGNAL and
++ *                CLONE_DETACHED.
++ * @pidfd:        If CLONE_PIDFD is set, a pidfd will be
++ *                returned in this argument.
++ * @child_tid:    If CLONE_CHILD_SETTID is set, the TID of the
++ *                child process will be returned in the child's
++ *                memory.
++ * @parent_tid:   If CLONE_PARENT_SETTID is set, the TID of
++ *                the child process will be returned in the
++ *                parent's memory.
++ * @exit_signal:  The exit_signal the parent process will be
++ *                sent when the child exits.
++ * @stack:        Specify the location of the stack for the
++ *                child process.
++ *                Note, @stack is expected to point to the
++ *                lowest address. The stack direction will be
++ *                determined by the kernel and set up
++ *                appropriately based on @stack_size.
++ * @stack_size:   The size of the stack for the child process.
++ * @tls:          If CLONE_SETTLS is set, the tls descriptor
++ *                is set to tls.
++ *
++ * The structure is versioned by size and thus extensible.
++ * New struct members must go at the end of the struct and
++ * must be properly 64bit aligned.
++ */
++struct clone_args {
++	__aligned_u64 flags;
++	__aligned_u64 pidfd;
++	__aligned_u64 child_tid;
++	__aligned_u64 parent_tid;
++	__aligned_u64 exit_signal;
++	__aligned_u64 stack;
++	__aligned_u64 stack_size;
++	__aligned_u64 tls;
++};
++#endif
++
++#define CLONE_ARGS_SIZE_VER0 64 /* sizeof first published struct */
++
+ /*
+  * Scheduling policies
+  */
+diff --git a/kernel/fork.c b/kernel/fork.c
+index ee31bc9f3..e89d9f582 100644
+--- a/kernel/fork.c
++++ b/kernel/fork.c
+@@ -2501,6 +2501,86 @@ SYSCALL_DEFINE5(clone, unsigned long, clone_flags, unsigned long, newsp,
+ {
+ 	return _do_fork(clone_flags, newsp, 0, parent_tidptr, child_tidptr, tls);
+ }
++
++static bool clone3_args_valid(const struct clone_args *args)
++{
++	/*
++	 * All lower bits of the flag word are taken.
++	 * Verify that no other unknown flags are passed along.
++	 */
++	if (args->flags & ~CLONE_LEGACY_FLAGS)
++		return false;
++
++	/*
++	 * - make the CLONE_DETACHED bit reuseable for clone3
++	 * - make the CSIGNAL bits reuseable for clone3
++	 */
++	if (args->flags & (CLONE_DETACHED | CSIGNAL))
++		return false;
++
++	if ((args->flags & (CLONE_THREAD | CLONE_PARENT)) &&
++	    args->exit_signal)
++		return false;
++
++	if (args->stack == 0) {
++		if (args->stack_size > 0)
++			return false;
++	} else {
++		if (args->stack_size == 0)
++			return false;
++
++		if (!access_ok(VERIFY_READ, (void __user *)args->stack,
++			       args->stack_size))
++			return false;
++	}
++
++	return true;
++}
++
++/*
++ * clone3 - create a new process with specific properties
++ * @uargs: argument structure
++ * @size:  size of @uargs
++ *
++ * clone3() is the extensible successor to clone()/clone2().
++ * It takes a struct as argument that is versioned by its size.
++ *
++ * Return: On success, a positive PID for the child process.
++ *         On error, a negative errno number.
++ */
++SYSCALL_DEFINE2(clone3, struct clone_args __user *, uargs, size_t, size)
++{
++	int err;
++	struct clone_args args;
++
++	if (unlikely(size > PAGE_SIZE))
++		return -E2BIG;
++
++	if (unlikely(size < CLONE_ARGS_SIZE_VER0))
++		return -EINVAL;
++
++	err = copy_struct_from_user(&args, sizeof(args), uargs, size);
++	if (err)
++		return err;
++
++	/*
++	 * Verify that higher 32bits of exit_signal are unset and that
++	 * it is a valid signal
++	 */
++	if (unlikely((args.exit_signal & ~((u64)CSIGNAL)) ||
++		     !valid_signal(args.exit_signal)))
++		return -EINVAL;
++
++	if (!clone3_args_valid(&args))
++		return -EINVAL;
++
++	return _do_fork(args.flags | (args.exit_signal & CSIGNAL),
++			args.stack + args.stack_size,
++			0,
++			(int __user *)args.parent_tid,
++			(int __user *)args.child_tid,
++			args.tls);
++}
+ #endif
+ 
+ void walk_process_tree(struct task_struct *top, proc_visitor visitor, void *data)
