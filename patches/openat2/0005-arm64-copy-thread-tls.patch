@@ -1,0 +1,36 @@
+diff --git a/arch/arm64/Kconfig b/arch/arm64/Kconfig
+index 5d4e2cd32..18e6fce2b 100644
+--- a/arch/arm64/Kconfig
++++ b/arch/arm64/Kconfig
+@@ -111,6 +111,7 @@ config ARM64
+ 	select HAVE_ALIGNED_STRUCT_PAGE if SLUB
+ 	select HAVE_ARCH_AUDITSYSCALL
+ 	select HAVE_ARCH_BITREVERSE
++	select HAVE_COPY_THREAD_TLS
+ 	select HAVE_ARCH_HUGE_VMAP
+ 	select HAVE_ARCH_JUMP_LABEL
+ 	select HAVE_ARCH_JUMP_LABEL_RELATIVE
+diff --git a/arch/arm64/kernel/process.c b/arch/arm64/kernel/process.c
+index 67c6a86b1..eeee055bb 100644
+--- a/arch/arm64/kernel/process.c
++++ b/arch/arm64/kernel/process.c
+@@ -410,8 +410,8 @@ int arch_dup_task_struct(struct task_struct *dst, struct task_struct *src)
+ 
+ asmlinkage void ret_from_fork(void) asm("ret_from_fork");
+ 
+-int copy_thread(unsigned long clone_flags, unsigned long stack_start,
+-		unsigned long stk_sz, struct task_struct *p)
++int copy_thread_tls(unsigned long clone_flags, unsigned long stack_start,
++		unsigned long stk_sz, struct task_struct *p, unsigned long tls)
+ {
+ 	struct pt_regs *childregs = task_pt_regs(p);
+ 
+@@ -448,7 +448,7 @@ int copy_thread(unsigned long clone_flags, unsigned long stack_start,
+ 		 * for the new thread.
+ 		 */
+ 		if (clone_flags & CLONE_SETTLS)
+-			p->thread.uw.tp_value = childregs->regs[3];
++			p->thread.uw.tp_value = tls;
+ 	} else {
+ 		memset(childregs, 0, sizeof(struct pt_regs));
+ 		childregs->pstate = PSR_MODE_EL1h;
