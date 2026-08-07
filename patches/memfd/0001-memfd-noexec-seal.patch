@@ -1,88 +1,66 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Pulsar Bot <pulsar@localhost>
-Date: Fri, 07 Aug 2026 21:00:00 +0000
 Subject: [PATCH] mm/memfd: add MFD_NOEXEC_SEAL and MFD_EXEC flags
 
 Backport of MFD_NOEXEC_SEAL and MFD_EXEC from Linux 5.13.
-Allows callers to explicitly control executability of anonymous
-memory created via memfd_create(2).
 
-MFD_NOEXEC_SEAL: seals the fd so the mapping cannot be made
-executable, which is the safe default for Android 14+.
-
-MFD_EXEC: no-op but documents intent that execution is expected
-(allows future policy enforcement).
-
-Signed-off-by: Pulsar Bot <pulsar@localhost>
----
- include/uapi/linux/memfd.h |  6 ++-
- mm/memfd.c                 | 20 +++++++++--
- 2 files changed, 23 insertions(+), 3 deletions(-)
-
-diff --git a/include/uapi/linux/memfd.h b/include/uapi/linux/memfd.h
-index 0000000..1111111 100644
 --- a/include/uapi/linux/memfd.h
 +++ b/include/uapi/linux/memfd.h
-@@ -1,10 +1,13 @@
- #ifndef _UAPI_LINUX_MEMFD_H
- #define _UAPI_LINUX_MEMFD_H
-
--/* flags for memfd_create(2) (unsigned int) */
-+/* flags for memfd_create(2) */
- #define MFD_CLOEXEC		0x0001U
+@@ -9,6 +9,10 @@
  #define MFD_ALLOW_SEALING	0x0002U
  #define MFD_HUGETLB		0x0004U
+ 
 +/* Explicitly allow/deny exec on the resulting fd */
 +#define MFD_EXEC		0x0010U
 +#define MFD_NOEXEC_SEAL		0x0008U
-
- #define MFD_HUGE_SHIFT	26
- #define MFD_HUGE_MASK	0x3C000000
-diff --git a/mm/memfd.c b/mm/memfd.c
-index 0000000..2222222 100644
++
+ /*
+  * Huge page size encoding when MFD_HUGETLB is specified, and a huge page
+  * size other than the default is desired.  See hugetlb_encode.h.
 --- a/mm/memfd.c
 +++ b/mm/memfd.c
-@@ -1,6 +1,8 @@
- /*
-  * memfd_create system call and file seals support
+@@ -4,6 +4,8 @@
+  * Code was originally included in shmem.c, and broken out to facilitate
+  * use by hugetlbfs as well as tmpfs.
   *
 + * MFD_NOEXEC_SEAL / MFD_EXEC backport from Linux 5.13.
 + *
-  * Largely based on the implementation by Michael Kerrisk.
-  * Copyright 2013 Canonical.
-  * Authors: Loic Minier, Serge Hallyn, Andy Lutomirski
-@@ -148,11 +150,16 @@ long __do_sys_memfd_create(const char __user *uname, unsigned int flags)
- 	unsigned int namelen;
- 	char *name;
- 	long fd;
-
--#define MFD_ALL_FLAGS (MFD_CLOEXEC | MFD_ALLOW_SEALING | MFD_HUGETLB | MFD_HUGE_MASK)
--	if (flags & ~MFD_ALL_FLAGS)
+  * This file is released under the GPL.
+  */
+ 
+@@ -258,7 +260,8 @@
+ #define MFD_NAME_PREFIX_LEN (sizeof(MFD_NAME_PREFIX) - 1)
+ #define MFD_NAME_MAX_LEN (NAME_MAX - MFD_NAME_PREFIX_LEN)
+ 
+-#define MFD_ALL_FLAGS (MFD_CLOEXEC | MFD_ALLOW_SEALING | MFD_HUGETLB)
 +#define MFD_ALL_FLAGS (MFD_CLOEXEC | MFD_ALLOW_SEALING | MFD_HUGETLB | \
-+		MFD_HUGE_MASK | MFD_EXEC | MFD_NOEXEC_SEAL)
-+	if (flags & ~MFD_ALL_FLAGS)
- 		return -EINVAL;
-
++		MFD_EXEC | MFD_NOEXEC_SEAL)
+ 
+ SYSCALL_DEFINE2(memfd_create,
+ 		const char __user *, uname,
+@@ -280,6 +283,10 @@
+ 			return -EINVAL;
+ 	}
+ 
 +	/* MFD_EXEC and MFD_NOEXEC_SEAL are mutually exclusive */
 +	if ((flags & MFD_EXEC) && (flags & MFD_NOEXEC_SEAL))
 +		return -EINVAL;
 +
- 	/* MFD_HUGETLB and MFD_ALLOW_SEALING both need MFD_CLOEXEC */
- 	if (flags & MFD_HUGETLB) {
- 		if (flags & ~(MFD_HUGETLB | MFD_CLOEXEC | MFD_HUGE_MASK))
-@@ -195,6 +203,15 @@ long __do_sys_memfd_create(const char __user *uname, unsigned int flags)
- 		goto err_fd;
- 	file->f_mode |= FMODE_LSEEK | FMODE_PREAD | FMODE_PWRITE;
- 	file->f_flags |= O_LARGEFILE;
-+
+ 	/* length includes terminating zero */
+ 	len = strnlen_user(uname, MFD_NAME_MAX_LEN + 1);
+ 	if (len <= 0)
+@@ -330,6 +337,15 @@
+ 		*file_seals &= ~F_SEAL_SEAL;
+ 	}
+ 
 +	if (flags & MFD_NOEXEC_SEAL) {
-+		struct shmem_inode_info *info = SHMEM_I(file->f_inode);
++		file_seals = memfd_file_seals_ptr(file);
 +		/* Seal the fd against future mmap(PROT_EXEC) */
 +		if (flags & MFD_ALLOW_SEALING)
-+			info->seals |= F_SEAL_EXEC;
++			*file_seals |= F_SEAL_EXEC;
 +		else
-+			info->seals |= F_SEAL_EXEC | F_SEAL_SEAL;
++			*file_seals |= F_SEAL_EXEC | F_SEAL_SEAL;
 +	}
-
++
  	fd_install(fd, file);
  	kfree(name);
+ 	return fd;
