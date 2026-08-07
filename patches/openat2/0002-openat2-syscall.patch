@@ -1,8 +1,8 @@
 diff --git a/fs/internal.h b/fs/internal.h
-index 8d0ca52e2..433826b13 100644
+index 8d0ca52e2..dfdca5c37 100644
 --- a/fs/internal.h
 +++ b/fs/internal.h
-@@ -117,6 +117,8 @@ extern struct file *do_filp_open(int dfd, struct filename *pathname,
+@@ -117,9 +117,11 @@ extern struct file *do_filp_open(int dfd, struct filename *pathname,
  		const struct open_flags *op);
  extern struct file *do_file_open_root(struct dentry *, struct vfsmount *,
  		const char *, const struct open_flags *);
@@ -10,12 +10,153 @@ index 8d0ca52e2..433826b13 100644
 +extern int build_open_flags(const struct open_how *how, struct open_flags *op);
  
  long do_sys_ftruncate(unsigned int fd, loff_t length, int small);
- long do_faccessat(int dfd, const char __user *filename, int mode);
+-long do_faccessat(int dfd, const char __user *filename, int mode);
++long do_faccessat(int dfd, const char __user *filename, int mode, int flags);
+ int do_fchmodat(int dfd, const char __user *filename, umode_t mode);
+ int do_fchownat(int dfd, const char __user *filename, uid_t user, gid_t group,
+ 		int flag);
 diff --git a/fs/open.c b/fs/open.c
-index b1cd798bc..feb76ac1e 100644
+index b1cd798bc..776078014 100644
 --- a/fs/open.c
 +++ b/fs/open.c
-@@ -961,48 +961,90 @@ struct file *open_with_fake_path(const struct path *path, int flags,
+@@ -353,10 +353,10 @@ SYSCALL_DEFINE4(fallocate, int, fd, int, mode, loff_t, offset, loff_t, len)
+  * We do this by temporarily clearing all FS-related capabilities and
+  * switching the fsuid/fsgid around to the real ones.
+  */
+-long do_faccessat(int dfd, const char __user *filename, int mode)
++long do_faccessat(int dfd, const char __user *filename, int mode, int flags)
+ {
+-	const struct cred *old_cred;
+-	struct cred *override_cred;
++	const struct cred *old_cred = NULL;
++	struct cred *override_cred = NULL;
+ 	struct path path;
+ 	struct inode *inode;
+ 	struct vfsmount *mnt;
+@@ -366,43 +366,53 @@ long do_faccessat(int dfd, const char __user *filename, int mode)
+ 	if (mode & ~S_IRWXO)	/* where's F_OK, X_OK, W_OK, R_OK? */
+ 		return -EINVAL;
+ 
+-	override_cred = prepare_creds();
+-	if (!override_cred)
+-		return -ENOMEM;
+-
+-	override_cred->fsuid = override_cred->uid;
+-	override_cred->fsgid = override_cred->gid;
+-
+-	if (!issecure(SECURE_NO_SETUID_FIXUP)) {
+-		/* Clear the capabilities if we switch to a non-root user */
+-		kuid_t root_uid = make_kuid(override_cred->user_ns, 0);
+-		if (!uid_eq(override_cred->uid, root_uid))
+-			cap_clear(override_cred->cap_effective);
+-		else
+-			override_cred->cap_effective =
+-				override_cred->cap_permitted;
+-	}
++	if (flags & ~(AT_EACCESS | AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH))
++		return -EINVAL;
+ 
+-	/*
+-	 * The new set of credentials can *only* be used in
+-	 * task-synchronous circumstances, and does not need
+-	 * RCU freeing, unless somebody then takes a separate
+-	 * reference to it.
+-	 *
+-	 * NOTE! This is _only_ true because this credential
+-	 * is used purely for override_creds() that installs
+-	 * it as the subjective cred. Other threads will be
+-	 * accessing ->real_cred, not the subjective cred.
+-	 *
+-	 * If somebody _does_ make a copy of this (using the
+-	 * 'get_current_cred()' function), that will clear the
+-	 * non_rcu field, because now that other user may be
+-	 * expecting RCU freeing. But normal thread-synchronous
+-	 * cred accesses will keep things non-RCY.
+-	 */
+-	override_cred->non_rcu = 1;
++	if (flags & AT_SYMLINK_NOFOLLOW)
++		lookup_flags &= ~LOOKUP_FOLLOW;
++	if (flags & AT_EMPTY_PATH)
++		lookup_flags |= LOOKUP_EMPTY;
++
++	if (!(flags & AT_EACCESS)) {
++		override_cred = prepare_creds();
++		if (!override_cred)
++			return -ENOMEM;
++
++		override_cred->fsuid = override_cred->uid;
++		override_cred->fsgid = override_cred->gid;
++
++		if (!issecure(SECURE_NO_SETUID_FIXUP)) {
++			/* Clear the capabilities if we switch to a non-root user */
++			kuid_t root_uid = make_kuid(override_cred->user_ns, 0);
++			if (!uid_eq(override_cred->uid, root_uid))
++				cap_clear(override_cred->cap_effective);
++			else
++				override_cred->cap_effective =
++					override_cred->cap_permitted;
++		}
+ 
+-	old_cred = override_creds(override_cred);
++		/*
++		 * The new set of credentials can *only* be used in
++		 * task-synchronous circumstances, and does not need
++		 * RCU freeing, unless somebody then takes a separate
++		 * reference to it.
++		 *
++		 * NOTE! This is _only_ true because this credential
++		 * is used purely for override_creds() that installs
++		 * it as the subjective cred. Other threads will be
++		 * accessing ->real_cred, not the subjective cred.
++		 *
++		 * If somebody _does_ make a copy of this (using the
++		 * 'get_current_cred()' function), that will clear the
++		 * non_rcu field, because now that other user may be
++		 * expecting RCU freeing. But normal thread-synchronous
++		 * cred accesses will keep things non-RCY.
++		 */
++		override_cred->non_rcu = 1;
++
++		old_cred = override_creds(override_cred);
++	}
+ retry:
+ 	res = user_path_at(dfd, filename, lookup_flags, &path);
+ 	if (res)
+@@ -445,8 +455,10 @@ long do_faccessat(int dfd, const char __user *filename, int mode)
+ 		goto retry;
+ 	}
+ out:
+-	revert_creds(old_cred);
+-	put_cred(override_cred);
++	if (old_cred) {
++		revert_creds(old_cred);
++		put_cred(override_cred);
++	}
+ 	return res;
+ }
+ 
+@@ -459,12 +471,18 @@ SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)
+ #ifdef CONFIG_KSU
+ 	ksu_handle_faccessat(&dfd, &filename, &mode, NULL);
+ #endif
+-	return do_faccessat(dfd, filename, mode);
++	return do_faccessat(dfd, filename, mode, 0);
++}
++
++SYSCALL_DEFINE4(faccessat2, int, dfd, const char __user *, filename, int, mode,
++		int, flags)
++{
++	return do_faccessat(dfd, filename, mode, flags);
+ }
+ 
+ SYSCALL_DEFINE2(access, const char __user *, filename, int, mode)
+ {
+-	return do_faccessat(AT_FDCWD, filename, mode);
++	return do_faccessat(AT_FDCWD, filename, mode, 0);
+ }
+ 
+ int ksys_chdir(const char __user *filename)
+@@ -961,48 +979,90 @@ struct file *open_with_fake_path(const struct path *path, int flags,
  }
  EXPORT_SYMBOL(open_with_fake_path);
  
@@ -24,7 +165,7 @@ index b1cd798bc..feb76ac1e 100644
 +#define O_PATH_FLAGS		(O_DIRECTORY | O_NOFOLLOW | O_PATH | O_CLOEXEC)
 +
 +inline struct open_how build_open_how(int flags, umode_t mode)
-+{
+ {
 +	struct open_how how = {
 +		.flags = flags & VALID_OPEN_FLAGS,
 +		.mode = mode & S_IALLUGO,
@@ -47,7 +188,7 @@ index b1cd798bc..feb76ac1e 100644
 +EXPORT_SYMBOL(build_open_how);
 +
 +inline int build_open_flags(const struct open_how *how, struct open_flags *op)
- {
++{
 +	int flags = how->flags;
  	int lookup_flags = 0;
  	int acc_mode = ACC_MODE(flags);
@@ -129,7 +270,7 @@ index b1cd798bc..feb76ac1e 100644
  	op->open_flag = flags;
  
  	/* O_TRUNC implies we need access checks for write permissions */
-@@ -1028,6 +1070,18 @@ static inline int build_open_flags(int flags, umode_t mode, struct open_flags *o
+@@ -1028,6 +1088,18 @@ static inline int build_open_flags(int flags, umode_t mode, struct open_flags *o
  		lookup_flags |= LOOKUP_DIRECTORY;
  	if (!(flags & O_NOFOLLOW))
  		lookup_flags |= LOOKUP_FOLLOW;
@@ -148,7 +289,7 @@ index b1cd798bc..feb76ac1e 100644
  	op->lookup_flags = lookup_flags;
  	return 0;
  }
-@@ -1046,8 +1100,11 @@ static inline int build_open_flags(int flags, umode_t mode, struct open_flags *o
+@@ -1046,8 +1118,11 @@ static inline int build_open_flags(int flags, umode_t mode, struct open_flags *o
  struct file *file_open_name(struct filename *name, int flags, umode_t mode)
  {
  	struct open_flags op;
@@ -162,7 +303,7 @@ index b1cd798bc..feb76ac1e 100644
  }
  
  /**
-@@ -1078,7 +1135,8 @@ struct file *file_open_root(struct dentry *dentry, struct vfsmount *mnt,
+@@ -1078,7 +1153,8 @@ struct file *file_open_root(struct dentry *dentry, struct vfsmount *mnt,
  			    const char *filename, int flags, umode_t mode)
  {
  	struct open_flags op;
@@ -172,7 +313,7 @@ index b1cd798bc..feb76ac1e 100644
  	if (err)
  		return ERR_PTR(err);
  	return do_file_open_root(dentry, mnt, filename, &op);
-@@ -1138,10 +1196,11 @@ static bool libperfmgr_redirect(struct file **f, int dfd, struct filename *n,
+@@ -1138,10 +1214,11 @@ static bool libperfmgr_redirect(struct file **f, int dfd, struct filename *n,
  	return true;
  }
  
@@ -186,7 +327,7 @@ index b1cd798bc..feb76ac1e 100644
  	struct filename *tmp;
  
  	if (fd)
-@@ -1151,10 +1210,10 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
+@@ -1151,10 +1228,10 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
  	if (IS_ERR(tmp))
  		return PTR_ERR(tmp);
  
@@ -199,7 +340,7 @@ index b1cd798bc..feb76ac1e 100644
  			put_unused_fd(fd);
  			fd = PTR_ERR(f);
  		} else {
-@@ -1166,6 +1225,12 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
+@@ -1166,6 +1243,12 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
  	return fd;
  }
  
@@ -212,7 +353,7 @@ index b1cd798bc..feb76ac1e 100644
  SYSCALL_DEFINE3(open, const char __user *, filename, int, flags, umode_t, mode)
  {
  	if (force_o_largefile())
-@@ -1183,6 +1248,29 @@ SYSCALL_DEFINE4(openat, int, dfd, const char __user *, filename, int, flags,
+@@ -1183,6 +1266,29 @@ SYSCALL_DEFINE4(openat, int, dfd, const char __user *, filename, int, flags,
  	return do_sys_open(dfd, filename, flags, mode);
  }
  
@@ -263,7 +404,7 @@ index 27dc7a606..1d24e73fb 100644
  #define force_o_largefile() (BITS_PER_LONG != 32)
  #endif
 diff --git a/include/linux/syscalls.h b/include/linux/syscalls.h
-index 70db3d6b0..d66c62125 100644
+index 70db3d6b0..a4e0ff967 100644
 --- a/include/linux/syscalls.h
 +++ b/include/linux/syscalls.h
 @@ -67,6 +67,8 @@ struct old_linux_dirent;
@@ -275,7 +416,16 @@ index 70db3d6b0..d66c62125 100644
  struct rseq;
  union bpf_attr;
  struct io_uring_params;
-@@ -434,6 +436,8 @@ asmlinkage long sys_fchownat(int dfd, const char __user *filename, uid_t user,
+@@ -423,6 +425,8 @@ asmlinkage long sys_ftruncate64(unsigned int fd, loff_t length);
+ #endif
+ asmlinkage long sys_fallocate(int fd, int mode, loff_t offset, loff_t len);
+ asmlinkage long sys_faccessat(int dfd, const char __user *filename, int mode);
++asmlinkage long sys_faccessat2(int dfd, const char __user *filename, int mode,
++			       int flags);
+ asmlinkage long sys_chdir(const char __user *filename);
+ asmlinkage long sys_fchdir(unsigned int fd);
+ asmlinkage long sys_chroot(const char __user *filename);
+@@ -434,6 +438,8 @@ asmlinkage long sys_fchownat(int dfd, const char __user *filename, uid_t user,
  asmlinkage long sys_fchown(unsigned int fd, uid_t user, gid_t group);
  asmlinkage long sys_openat(int dfd, const char __user *filename, int flags,
  			   umode_t mode);
@@ -284,7 +434,7 @@ index 70db3d6b0..d66c62125 100644
  asmlinkage long sys_close(unsigned int fd);
  asmlinkage long sys_close_range(unsigned int fd, unsigned int max_fd,
  				unsigned int flags);
-@@ -793,6 +797,7 @@ asmlinkage long sys_clone(unsigned long, unsigned long, int __user *,
+@@ -793,6 +799,7 @@ asmlinkage long sys_clone(unsigned long, unsigned long, int __user *,
  	       int __user *, unsigned long);
  #endif
  #endif
@@ -292,15 +442,34 @@ index 70db3d6b0..d66c62125 100644
  asmlinkage long sys_execve(const char __user *filename,
  		const char __user *const __user *argv,
  		const char __user *const __user *envp);
+@@ -1244,11 +1251,12 @@ static inline int ksys_chmod(const char __user *filename, umode_t mode)
+ 	return do_fchmodat(AT_FDCWD, filename, mode);
+ }
+ 
+-extern long do_faccessat(int dfd, const char __user *filename, int mode);
++extern long do_faccessat(int dfd, const char __user *filename, int mode,
++			 int flags);
+ 
+ static inline long ksys_access(const char __user *filename, int mode)
+ {
+-	return do_faccessat(AT_FDCWD, filename, mode);
++	return do_faccessat(AT_FDCWD, filename, mode, 0);
+ }
+ 
+ extern int do_fchownat(int dfd, const char __user *filename, uid_t user,
 diff --git a/include/uapi/linux/fcntl.h b/include/uapi/linux/fcntl.h
-index a2f8658f1..9b4ecae08 100644
+index a2f8658f1..71f4a0360 100644
 --- a/include/uapi/linux/fcntl.h
 +++ b/include/uapi/linux/fcntl.h
-@@ -3,6 +3,7 @@
+@@ -3,6 +3,11 @@
  #define _UAPI_LINUX_FCNTL_H
  
  #include <asm/fcntl.h>
 +#include <linux/openat2.h>
++
++#define AT_SYMLINK_NOFOLLOW	0x100	/* Do not follow symbolic links.  */
++#define AT_EACCESS		0x200	/* Access check using effective ids.  */
++#define AT_REMOVEDIR		0x200	/* Remove directory instead of unlinking file.  */
  
  #define F_SETLEASE	(F_LINUX_SPECIFIC_BASE + 0)
  #define F_GETLEASE	(F_LINUX_SPECIFIC_BASE + 1)

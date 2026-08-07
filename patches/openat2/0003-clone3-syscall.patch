@@ -1,8 +1,8 @@
 diff --git a/arch/arm64/include/asm/unistd32.h b/arch/arm64/include/asm/unistd32.h
-index 3315ff533..dc29d4dfc 100644
+index 3315ff533..edec91ddb 100644
 --- a/arch/arm64/include/asm/unistd32.h
 +++ b/arch/arm64/include/asm/unistd32.h
-@@ -823,8 +823,12 @@ __SYSCALL(__NR_rseq, sys_rseq)
+@@ -823,8 +823,14 @@ __SYSCALL(__NR_rseq, sys_rseq)
  __SYSCALL(__NR_pidfd_send_signal, sys_pidfd_send_signal)
  #define __NR_pidfd_open 434
  __SYSCALL(__NR_pidfd_open, sys_pidfd_open)
@@ -12,6 +12,8 @@ index 3315ff533..dc29d4dfc 100644
  __SYSCALL(__NR_close_range, sys_close_range)
 +#define __NR_openat2 437
 +__SYSCALL(__NR_openat2, sys_openat2)
++#define __NR_faccessat2 439
++__SYSCALL(__NR_faccessat2, sys_faccessat2)
  #define __NR_process_madvise 440
  __SYSCALL(__NR_process_madvise, sys_process_madvise)
  #define __NR_epoll_pwait2 441
