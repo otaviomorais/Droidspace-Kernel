@@ -1,0 +1,53 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Pulsar Bot <pulsar@localhost>
+Date: Fri, 07 Aug 2026 21:00:00 +0000
+Subject: [PATCH 0/2] fs: add fget_task helper
+
+Backport of fget_task() from Linux 5.6 (fs/file.c).
+Returns a reference to the file descriptor of another task,
+used by the pidfd_getfd syscall. 4.19 only exposes
+__fget_files_rcu() (needs rcu_read_lock held), so the
+backport wraps it explicitly, mirroring __fget().
+
+Signed-off-by: Pulsar Bot <pulsar@localhost>
+---
+ include/linux/file.h |  2 ++
+ fs/file.c            | 16 ++++++++++++++++
+
+diff --git a/include/linux/file.h b/include/linux/file.h
+--- a/include/linux/file.h
++++ b/include/linux/file.h
+@@ -49,2 +49,4 @@
+ extern struct file *fget_raw(unsigned int fd);
++struct task_struct;
++extern struct file *fget_task(struct task_struct *task, unsigned int fd);
+ extern unsigned long __fdget(unsigned int fd);
+diff --git a/fs/file.c b/fs/file.c
+--- a/fs/file.c
++++ b/fs/file.c
+@@ -924,5 +924,23 @@
+ }
+ EXPORT_SYMBOL(fget_raw);
+ 
++struct file *fget_task(struct task_struct *task, unsigned int fd)
++{
++	struct files_struct *files;
++	struct file *file = NULL;
++
++	task_lock(task);
++	files = task->files;
++	if (files) {
++		rcu_read_lock();
++		file = __fget_files_rcu(files, fd, FMODE_PATH, 1);
++		rcu_read_unlock();
++	}
++	task_unlock(task);
++
++	return file;
++}
++EXPORT_SYMBOL(fget_task);
++
+ /*
+  * Lightweight file lookup - no refcnt increment if fd table isn't shared.
+  *
+```

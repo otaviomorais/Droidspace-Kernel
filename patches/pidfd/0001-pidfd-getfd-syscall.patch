@@ -1,0 +1,122 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Pulsar Bot <pulsar@localhost>
+Date: Fri, 07 Aug 2026 21:00:00 +0000
+Subject: [PATCH 1/2] pid: add pidfd_getfd syscall (nr 438)
+
+Backport of pidfd_getfd from Linux 5.6.
+Allows copying a file descriptor from another process into the
+caller's fd table, identified via a pidfd. Used by DroidSpaces
+container manager to manage fds across container boundaries.
+
+Note: depends on 0000-fget-task.patch (fget_task does not exist
+in 4.19). The syscall number 438 already fits in __NR_syscalls
+and __NR_compat_syscalls (both 442 after the openat2 patches),
+so no table-size change is required.
+
+Signed-off-by: Pulsar Bot <pulsar@localhost>
+---
+ include/uapi/asm-generic/unistd.h |  2 ++
+ arch/arm64/include/asm/unistd32.h |  2 ++
+ include/linux/syscalls.h          |  1 +
+ kernel/pid.c                      | 61 +++++++++++++++++++++++++++++++
+
+diff --git a/include/uapi/asm-generic/unistd.h b/include/uapi/asm-generic/unistd.h
+--- a/include/uapi/asm-generic/unistd.h
++++ b/include/uapi/asm-generic/unistd.h
+@@ -753,4 +753,6 @@ __SYSCALL(__NR_clone3, sys_clone3)
+ #define __NR_openat2 437
+ __SYSCALL(__NR_openat2, sys_openat2)
++#define __NR_pidfd_getfd 438
++__SYSCALL(__NR_pidfd_getfd, sys_pidfd_getfd)
+ #define __NR_faccessat2 439
+ __SYSCALL(__NR_faccessat2, sys_faccessat2)
+diff --git a/arch/arm64/include/asm/unistd32.h b/arch/arm64/include/asm/unistd32.h
+--- a/arch/arm64/include/asm/unistd32.h
++++ b/arch/arm64/include/asm/unistd32.h
+@@ -830,4 +830,6 @@ __SYSCALL(__NR_clone3, sys_clone3)
+ #define __NR_openat2 437
+ __SYSCALL(__NR_openat2, sys_openat2)
++#define __NR_pidfd_getfd 438
++__SYSCALL(__NR_pidfd_getfd, sys_pidfd_getfd)
+ #define __NR_faccessat2 439
+ __SYSCALL(__NR_faccessat2, sys_faccessat2)
+diff --git a/include/linux/syscalls.h b/include/linux/syscalls.h
+--- a/include/linux/syscalls.h
++++ b/include/linux/syscalls.h
+@@ -877,2 +877,3 @@
+ asmlinkage long sys_pidfd_open(pid_t pid, unsigned int flags);
++asmlinkage long sys_pidfd_getfd(int pidfd, int fd, unsigned int flags);
+ asmlinkage long sys_sendmmsg(int fd, struct mmsghdr __user *msg,
+diff --git a/kernel/pid.c b/kernel/pid.c
+--- a/kernel/pid.c
++++ b/kernel/pid.c
+@@ -43,2 +43,3 @@
+ #include <linux/file.h>
++#include <linux/ptrace.h>
+ #include <linux/idr.h>
+@@ -557,5 +557,65 @@
+ 	idr_init(&init_pid_ns.idr);
+ 
+ 	init_pid_ns.pid_cachep = KMEM_CACHE(pid,
+ 			SLAB_HWCACHE_ALIGN | SLAB_PANIC | SLAB_ACCOUNT);
+ }
++
++static int pidfd_getfd(struct pid *pid, int fd)
++{
++	struct task_struct *task;
++	struct file *file;
++	int ret;
++
++	task = get_pid_task(pid, PIDTYPE_PID);
++	if (!task)
++		return -ESRCH;
++
++	/*
++	 * We need ptrace_may_access to ensure we're only copying fds
++	 * from processes we have permission to inspect.
++	 */
++	if (!ptrace_may_access(task, PTRACE_MODE_ATTACH_REALCREDS)) {
++		ret = -EPERM;
++		goto out_put_task;
++	}
++
++	file = fget_task(task, fd);
++	if (!file) {
++		ret = -EBADF;
++		goto out_put_task;
++	}
++
++	ret = get_unused_fd_flags(O_CLOEXEC);
++	if (ret < 0)
++		goto out_put_file;
++
++	fd_install(ret, file);
++	put_task_struct(task);
++	return ret;
++
++out_put_file:
++	fput(file);
++out_put_task:
++	put_task_struct(task);
++	return ret;
++}
++
++SYSCALL_DEFINE3(pidfd_getfd, int, pidfd, int, fd, unsigned int, flags)
++{
++	struct pid *pid;
++	struct fd f;
++	int ret;
++
++	if (flags)
++		return -EINVAL;
++
++	f = fdget(pidfd);
++	if (!f.file)
++		return -EBADF;
++
++	pid = pidfd_pid(f.file);
++	ret = IS_ERR(pid) ? PTR_ERR(pid) : pidfd_getfd(pid, fd);
++
++	fdput(f);
++	return ret;
++}

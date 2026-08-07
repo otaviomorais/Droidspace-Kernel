@@ -1,0 +1,125 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Pulsar Bot <pulsar@localhost>
+Date: Fri, 07 Aug 2026 21:00:00 +0000
+Subject: [PATCH] seccomp: add SECCOMP_IOCTL_NOTIF_ADDFD
+
+Backport of seccomp notify addfd from Linux 5.9.
+Allows a seccomp supervisor to inject a file descriptor into
+the supervised process while handling a seccomp notification.
+
+This is needed for DroidSpaces container supervisor to intercept
+fd-returning syscalls and inject remapped fds into the container.
+
+NOTE: Apply with --reject if context offsets differ.
+
+Signed-off-by: Pulsar Bot <pulsar@localhost>
+---
+ include/uapi/linux/seccomp.h |  18 ++++++
+ kernel/seccomp.c             |  72 ++++++++++++++++++++++
+
+diff --git a/include/uapi/linux/seccomp.h b/include/uapi/linux/seccomp.h
+--- a/include/uapi/linux/seccomp.h
++++ b/include/uapi/linux/seccomp.h
+@@ -97,6 +97,24 @@ struct seccomp_notif_resp {
+ 	__u32 flags;
+ };
+
++struct seccomp_notif_addfd {
++	__u64 id;       /* notification id */
++	__u32 flags;    /* SECCOMP_ADDFD_FLAG_* */
++	__u32 srcfd;    /* fd in the supervisor */
++	__u32 newfd;    /* target fd in the supervised task (0 = any) */
++	__u32 newfd_flags; /* O_CLOEXEC etc. */
++};
++
++/* flags for seccomp_notif_addfd.flags */
++#define SECCOMP_ADDFD_FLAG_SETFD	(1UL << 0) /* install at newfd exactly */
++#define SECCOMP_ADDFD_FLAG_SEND		(1UL << 1) /* also send reply */
++
++#define SECCOMP_IOC_MAGIC		'!'
++#define SECCOMP_IO(nr)			_IO(SECCOMP_IOC_MAGIC, nr)
++#define SECCOMP_IOW(nr, type)		_IOW(SECCOMP_IOC_MAGIC, nr, type)
++#define SECCOMP_IOCTL_NOTIF_RECV	SECCOMP_IOW(0, struct seccomp_notif)
++#define SECCOMP_IOCTL_NOTIF_SEND	SECCOMP_IOW(1, struct seccomp_notif_resp)
++#define SECCOMP_IOCTL_NOTIF_ID_VALID	SECCOMP_IOW(2, __u64)
++#define SECCOMP_IOCTL_NOTIF_ADDFD	SECCOMP_IOW(3, struct seccomp_notif_addfd)
++
+diff --git a/kernel/seccomp.c b/kernel/seccomp.c
+--- a/kernel/seccomp.c
++++ b/kernel/seccomp.c
+@@ -1050,6 +1050,77 @@ static long seccomp_notify_id_valid(struct seccomp_filter *filter,
+ 	return ret;
+ }
+
++static long seccomp_notify_addfd(struct seccomp_filter *filter,
++				  struct seccomp_notif_addfd __user *uaddfd)
++{
++	struct seccomp_notif_addfd addfd;
++	struct seccomp_knotif *knotif;
++	struct file *file;
++	int newfd, ret = 0;
++	unsigned long flags;
++
++	if (copy_from_user(&addfd, uaddfd, sizeof(addfd)))
++		return -EFAULT;
++
++	if (addfd.flags & ~(SECCOMP_ADDFD_FLAG_SETFD | SECCOMP_ADDFD_FLAG_SEND))
++		return -EINVAL;
++
++	if (addfd.newfd_flags & ~O_CLOEXEC)
++		return -EINVAL;
++
++	/* Get the source file from the supervisor */
++	file = fget(addfd.srcfd);
++	if (!file)
++		return -EBADF;
++
++	spin_lock_irqsave(&filter->notify_lock, flags);
++	knotif = find_notification(filter, addfd.id);
++	if (!knotif) {
++		ret = -ENOENT;
++		goto out_unlock;
++	}
++
++	if (knotif->state != SECCOMP_NOTIFY_SENT) {
++		ret = -EINPROGRESS;
++		goto out_unlock;
++	}
++
++	/* Install the fd into the supervised task's fd table */
++	if (addfd.flags & SECCOMP_ADDFD_FLAG_SETFD)
++		newfd = addfd.newfd;
++	else
++		newfd = get_unused_fd_flags(addfd.newfd_flags);
++
++	if (newfd < 0) {
++		ret = newfd;
++		goto out_unlock;
++	}
++
++	get_file(file);
++	ret = task_fd_install(knotif->task, newfd, file,
++			      addfd.newfd_flags & O_CLOEXEC ? O_CLOEXEC : 0);
++	if (ret && !(addfd.flags & SECCOMP_ADDFD_FLAG_SETFD))
++		put_unused_fd(newfd);
++	else if (!ret)
++		ret = newfd;
++
++out_unlock:
++	spin_unlock_irqrestore(&filter->notify_lock, flags);
++	fput(file);
++	return ret;
++}
++
+ static long seccomp_notify_ioctl(struct file *file, unsigned int cmd,
+ 				 unsigned long arg)
+ {
+@@ -1065,6 +1135,8 @@ static long seccomp_notify_ioctl(struct file *file, unsigned int cmd,
+ 		return seccomp_notify_send(filter, buf);
+ 	case SECCOMP_IOCTL_NOTIF_ID_VALID:
+ 		return seccomp_notify_id_valid(filter, buf);
++	case SECCOMP_IOCTL_NOTIF_ADDFD:
++		return seccomp_notify_addfd(filter, buf);
+ 	}
+
+ 	return -EINVAL;
