@@ -20,7 +20,7 @@ Signed-off-by: Pulsar Bot <pulsar@localhost>
 diff --git a/include/uapi/linux/seccomp.h b/include/uapi/linux/seccomp.h
 --- a/include/uapi/linux/seccomp.h
 +++ b/include/uapi/linux/seccomp.h
-@@ -97,6 +97,24 @@ struct seccomp_notif_resp {
+@@ -97,3 +97,23 @@ struct seccomp_notif_resp {
  	__u32 flags;
  };
 
@@ -47,7 +47,7 @@ diff --git a/include/uapi/linux/seccomp.h b/include/uapi/linux/seccomp.h
 diff --git a/kernel/seccomp.c b/kernel/seccomp.c
 --- a/kernel/seccomp.c
 +++ b/kernel/seccomp.c
-@@ -1050,6 +1050,77 @@ static long seccomp_notify_id_valid(struct seccomp_filter *filter,
+@@ -1050,6 +1050,66 @@ static long seccomp_notify_id_valid(struct seccomp_filter *filter,
  	return ret;
  }
 

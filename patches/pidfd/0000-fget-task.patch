@@ -25,7 +25,7 @@ diff --git a/include/linux/file.h b/include/linux/file.h
 diff --git a/fs/file.c b/fs/file.c
 --- a/fs/file.c
 +++ b/fs/file.c
-@@ -924,5 +924,23 @@
+@@ -924,6 +924,24 @@
  }
  EXPORT_SYMBOL(fget_raw);
  

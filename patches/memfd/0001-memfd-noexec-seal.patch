@@ -23,7 +23,7 @@ diff --git a/include/uapi/linux/memfd.h b/include/uapi/linux/memfd.h
 index 0000000..1111111 100644
 --- a/include/uapi/linux/memfd.h
 +++ b/include/uapi/linux/memfd.h
-@@ -1,9 +1,13 @@
+@@ -1,10 +1,13 @@
  #ifndef _UAPI_LINUX_MEMFD_H
  #define _UAPI_LINUX_MEMFD_H
 
@@ -51,7 +51,7 @@ index 0000000..2222222 100644
   * Largely based on the implementation by Michael Kerrisk.
   * Copyright 2013 Canonical.
   * Authors: Loic Minier, Serge Hallyn, Andy Lutomirski
-@@ -148,10 +150,16 @@ long __do_sys_memfd_create(const char __user *uname, unsigned int flags)
+@@ -148,11 +150,16 @@ long __do_sys_memfd_create(const char __user *uname, unsigned int flags)
  	unsigned int namelen;
  	char *name;
  	long fd;
@@ -70,7 +70,7 @@ index 0000000..2222222 100644
  	/* MFD_HUGETLB and MFD_ALLOW_SEALING both need MFD_CLOEXEC */
  	if (flags & MFD_HUGETLB) {
  		if (flags & ~(MFD_HUGETLB | MFD_CLOEXEC | MFD_HUGE_MASK))
-@@ -195,6 +203,14 @@ long __do_sys_memfd_create(const char __user *uname, unsigned int flags)
+@@ -195,6 +203,15 @@ long __do_sys_memfd_create(const char __user *uname, unsigned int flags)
  		goto err_fd;
  	file->f_mode |= FMODE_LSEEK | FMODE_PREAD | FMODE_PWRITE;
  	file->f_flags |= O_LARGEFILE;

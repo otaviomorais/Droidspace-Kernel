@@ -27,7 +27,7 @@ diff --git a/include/linux/file.h b/include/linux/file.h
 diff --git a/fs/file.c b/fs/file.c
 --- a/fs/file.c
 +++ b/fs/file.c
-@@ -628,3 +628,24 @@
+@@ -628,3 +628,25 @@
  }
  EXPORT_SYMBOL(fd_install);
  

@@ -20,7 +20,7 @@ Signed-off-by: Pulsar Bot <pulsar@localhost>
 diff --git a/mm/Kconfig b/mm/Kconfig
 --- a/mm/Kconfig
 +++ b/mm/Kconfig
-@@ -550,16 +550,24 @@ config ZSWAP_COMPRESSOR_DEFAULT_LZ4
+@@ -550,12 +550,20 @@ config ZSWAP_COMPRESSOR_DEFAULT_LZ4
  	bool "lz4"
  	depends on CRYPTO_LZ4
 
@@ -44,7 +44,7 @@ diff --git a/mm/Kconfig b/mm/Kconfig
 diff --git a/mm/zswap.c b/mm/zswap.c
 --- a/mm/zswap.c
 +++ b/mm/zswap.c
-@@ -100,7 +100,7 @@ static bool zswap_enabled = IS_ENABLED(CONFIG_ZSWAP_DEFAULT_ON);
+@@ -100,6 +100,6 @@ static bool zswap_enabled = IS_ENABLED(CONFIG_ZSWAP_DEFAULT_ON);
  module_param_named(enabled, zswap_enabled, bool, 0644);
 
  static char *zswap_compressor = CONFIG_ZSWAP_COMPRESSOR_DEFAULT;
