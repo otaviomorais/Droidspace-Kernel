@@ -1,9 +1,9 @@
 diff --git a/include/uapi/asm-generic/unistd.h b/include/uapi/asm-generic/unistd.h
-index 317574846..99938ac01 100644
+index 5acf03522..f832de88c 100644
 --- a/include/uapi/asm-generic/unistd.h
 +++ b/include/uapi/asm-generic/unistd.h
-@@ -740,8 +740,12 @@ __SYSCALL(__NR_rseq, sys_rseq)
- __SYSCALL(__NR_pidfd_send_signal, sys_pidfd_send_signal)
+@@ -746,8 +746,12 @@ __SYSCALL(__NR_io_uring_enter, sys_io_uring_enter)
+ __SYSCALL(__NR_io_uring_register, sys_io_uring_register)
  #define __NR_pidfd_open 434
  __SYSCALL(__NR_pidfd_open, sys_pidfd_open)
 +#define __NR_clone3 435
