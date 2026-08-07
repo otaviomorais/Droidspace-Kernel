@@ -1,34 +1,24 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Pulsar Bot <pulsar@localhost>
-Date: Fri, 07 Aug 2026 21:00:00 +0000
 Subject: [PATCH] fs: add task_fd_install() helper
 
 Backport of task_fd_install() needed by the seccomp notify addfd
 feature. This allows the supervisor to install a file descriptor
 into the supervised task's fdtable.
 
-Signed-off-by: Pulsar Bot <pulsar@localhost>
----
- include/linux/file.h |  3 +++
- fs/file.c            | 21 +++++++++++++++++++++
- 2 files changed, 24 insertions(+)
-
-diff --git a/include/linux/file.h b/include/linux/file.h
 --- a/include/linux/file.h
 +++ b/include/linux/file.h
-@@ -87,4 +87,7 @@
+@@ -88,6 +88,7 @@
  extern void put_unused_fd(unsigned int fd);
  
  extern void fd_install(unsigned int fd, struct file *file);
-+
 +extern int task_fd_install(struct task_struct *task, unsigned int fd, struct file *file, unsigned int flags);
-+
  
-diff --git a/fs/file.c b/fs/file.c
+ extern void flush_delayed_fput(void);
+ extern void flush_delayed_fput_wait(void);
 --- a/fs/file.c
 +++ b/fs/file.c
-@@ -628,3 +628,25 @@
- }
+@@ -633,6 +633,29 @@
+ 
  EXPORT_SYMBOL(fd_install);
  
 +int task_fd_install(struct task_struct *task, unsigned int fd, struct file *file, unsigned int flags)
@@ -53,3 +43,7 @@ diff --git a/fs/file.c b/fs/file.c
 +	return files ? 0 : -ESRCH;
 +}
 +EXPORT_SYMBOL(task_fd_install);
++
+ static struct file *pick_file(struct files_struct *files, unsigned fd)
+ {
+ 	struct file *file = NULL;
