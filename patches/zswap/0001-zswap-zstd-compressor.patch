@@ -26,7 +26,7 @@ Reconstructed and validated against e404 staging-bpf base.
  
 +config ZSWAP_COMPRESSOR_ZSTD
 +	bool "Use zstd as default zswap compressor"
-+	depends on ZSWAP && CRYPTO_ZSTD
++	depends on ZSWAP
 +	default n
 +	help
 +	  Use zstd instead of lzo as the default compressor for zswap.
