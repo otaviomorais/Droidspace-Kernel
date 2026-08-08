@@ -119,7 +119,7 @@ index 9efc0e7..a9b4cfc 100644
 +
  #endif /* _UAPI_LINUX_SECCOMP_H */
 diff --git a/kernel/seccomp.c b/kernel/seccomp.c
-index b56f574..5fa02e6 100644
+index b56f574..a38a617 100644
 --- a/kernel/seccomp.c
 +++ b/kernel/seccomp.c
 @@ -31,6 +31,14 @@
@@ -938,7 +938,7 @@ index b56f574..5fa02e6 100644
 +		if (flags != 0)
 +			return -EINVAL;
 +
-+		return seccomp_get_notif_sizes(uargs);
++		return seccomp_get_notif_sizes((void __user *)uargs);
  	default:
  		return -EINVAL;
  	}
