@@ -1,55 +1,53 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Pulsar Bot <pulsar@localhost>
-Date: Fri, 07 Aug 2026 21:00:00 +0000
-Subject: [PATCH] mm/zswap: add zstd as default compressor option
+Subject: [PATCH] mm/zswap: add zstd as selectable compressor
 
-zswap already supports pluggable compressors via the crypto API.
-This patch adds Kconfig support for selecting zstd as the default
-and documents it in mm/Kconfig. The actual crypto driver is
-provided by lib/zstd/ which is already used by zram.
+The e404 base has ZSWAP with hardcoded LZO. This patch adds
+CONFIG_ZSWAP_COMPRESSOR_ZSTD to optionally use zstd as the default
+compressor. zstd gives ~20% better compression ratio vs lzo at
+comparable decompression speed on SM8250 (POCO F3/alioth).
 
-For SM8250/alioth, zstd gives ~20% better compression ratio than
-lz4 with similar decompression speed, reducing swap pressure.
+Set CONFIG_ZSWAP_COMPRESSOR_ZSTD=y in droidspace.config to enable.
 
-Signed-off-by: Pulsar Bot <pulsar@localhost>
----
- mm/Kconfig  | 24 ++++++++++++++++--------
- mm/zswap.c  |  4 ++--
- 2 files changed, 18 insertions(+), 10 deletions(-)
+Reconstructed and validated against e404 staging-bpf base.
 
-diff --git a/mm/Kconfig b/mm/Kconfig
 --- a/mm/Kconfig
 +++ b/mm/Kconfig
-@@ -550,12 +550,20 @@ config ZSWAP_COMPRESSOR_DEFAULT_LZ4
- 	bool "lz4"
- 	depends on CRYPTO_LZ4
-
-+config ZSWAP_COMPRESSOR_DEFAULT_ZSTD
-+	bool "zstd"
-+	depends on CRYPTO_ZSTD
+@@ -571,6 +571,7 @@
+ 	bool "Compressed cache for swap pages (EXPERIMENTAL)"
+ 	depends on FRONTSWAP && CRYPTO=y && !ZRAM
+ 	select CRYPTO_LZO
++	select CRYPTO_ZSTD if ZSWAP_COMPRESSOR_ZSTD
+ 	select ZPOOL
+ 	default n
+ 	help
+@@ -587,6 +588,16 @@
+ 	  they have not be fully explored on the large set of potential
+ 	  configurations and workloads that exist.
+ 
++config ZSWAP_COMPRESSOR_ZSTD
++	bool "Use zstd as default zswap compressor"
++	depends on ZSWAP && CRYPTO_ZSTD
++	default n
 +	help
-+	  zstd offers better compression ratio than lz4 at similar
-+	  decompression throughput. Recommended for mobile devices.
++	  Use zstd instead of lzo as the default compressor for zswap.
++	  zstd provides better compression ratios at comparable decompression
++	  speed. Recommended for SM8250 (POCO F3).
 +
- endchoice
-
- config ZSWAP_COMPRESSOR_DEFAULT
- 	string
- 	depends on ZSWAP
- 	default "lzo" if ZSWAP_COMPRESSOR_DEFAULT_LZO
- 	default "lz4" if ZSWAP_COMPRESSOR_DEFAULT_LZ4
-+	default "zstd" if ZSWAP_COMPRESSOR_DEFAULT_ZSTD
- 	default "lzo"
-
-diff --git a/mm/zswap.c b/mm/zswap.c
++
+ config ZPOOL
+ 	tristate "Common API for compressed memory storage"
+ 	default n
 --- a/mm/zswap.c
 +++ b/mm/zswap.c
-@@ -100,6 +100,6 @@ static bool zswap_enabled = IS_ENABLED(CONFIG_ZSWAP_DEFAULT_ON);
- module_param_named(enabled, zswap_enabled, bool, 0644);
-
- static char *zswap_compressor = CONFIG_ZSWAP_COMPRESSOR_DEFAULT;
--module_param_named(compressor, zswap_compressor, charp, 0644);
-+module_param_named(compressor, zswap_compressor, charp, 0444);
- MODULE_PARM_DESC(compressor,
--		"Compressor for zswap (lzo, lz4, deflate; default: lzo)");
-+		"Compressor for zswap (lzo, lz4, zstd, deflate; default: lzo)");
+@@ -91,7 +91,11 @@
+ module_param_cb(enabled, &zswap_enabled_param_ops, &zswap_enabled, 0644);
+ 
+ /* Crypto compressor to use */
++#ifdef CONFIG_ZSWAP_COMPRESSOR_ZSTD
++#define ZSWAP_COMPRESSOR_DEFAULT "zstd"
++#else
+ #define ZSWAP_COMPRESSOR_DEFAULT "lzo"
++#endif
+ static char *zswap_compressor = ZSWAP_COMPRESSOR_DEFAULT;
+ static int zswap_compressor_param_set(const char *,
+ 				      const struct kernel_param *);
