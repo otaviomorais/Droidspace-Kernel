@@ -74,7 +74,7 @@ jobs:
           export KBUILD_BUILD_HOST=github-actions
           make -j"$(nproc)" O=out LLVM=1 LLVM_IAS=1 HOSTCC=gcc PYTHON=python3 \
             CC=clang LD=ld.lld AS=llvm-as AR=llvm-ar NM=llvm-nm \
-            OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip
+            OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip Image
 
       - name: Collect artifacts
         run: |
