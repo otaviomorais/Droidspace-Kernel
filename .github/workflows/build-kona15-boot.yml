@@ -1,0 +1,120 @@
+name: Build kona-5.15 boot test (bare)
+
+on:
+  workflow_dispatch:
+    inputs:
+      device:
+        description: 'Dispositivo (nome do zip; sempre usa boot-assets alioth)'
+        required: false
+        default: 'alioth'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: kernel-build-kona515
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      DEVICE: ${{ github.event.inputs.device || 'alioth' }}
+    steps:
+      - name: Checkout Pulsar-Kernel (assets + AK3)
+        uses: actions/checkout@v4
+        with:
+          path: droidspace
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -y
+sudo apt-get install -y --no-install-recommends \
+            flex bison bc zip unzip file python3 \
+            libssl-dev libncurses-dev cpio lld
+
+      - name: Clone kernel source (kona-msm-5.15)
+        run: |
+          git clone --depth 1 --branch rofikkernel \
+            https://github.com/rofikkerneldev/kona_msm-5.15.git kernel
+
+      - name: Download Clang 20 (ZyCromerZ)
+        run: |
+          mkdir -p toolchain
+          cd toolchain
+          curl -L -o clang.tar.gz \
+            https://github.com/ZyCromerZ/Clang/releases/download/20.0.0git-20250129-release/Clang-20.0.0git-20250129.tar.gz
+          tar -xf clang.tar.gz
+          CLANG_BIN="$(pwd)/bin"
+          if [ ! -x "$CLANG_BIN/clang" ]; then
+            CLANG_BIN="$(cd "$(find . -name clang -path '*/bin/*' -exec dirname {} \; | head -1)" && pwd)"
+          fi
+          echo "Clang em: $CLANG_BIN"
+          echo "$CLANG_BIN" >> "$GITHUB_PATH"
+
+      - name: Configure kernel (gki_defconfig + kona fragments)
+        working-directory: kernel
+        run: |
+          export ARCH=arm64
+          export KBUILD_BUILD_USER=RofiK
+          export KBUILD_BUILD_HOST=github-actions
+          make O=out LLVM=1 LLVM_IAS=1 HOSTCC=gcc PYTHON=python3 gki_defconfig
+          scripts/kconfig/merge_config.sh -O out -m \
+            out/.config \
+            arch/arm64/configs/vendor/kona_GKI.config \
+            arch/arm64/configs/vendor/kona_consolidate.config || true
+          make O=out LLVM=1 LLVM_IAS=1 HOSTCC=gcc PYTHON=python3 olddefconfig
+
+      - name: Build kernel
+        working-directory: kernel
+        run: |
+          export ARCH=arm64
+          export KBUILD_BUILD_USER=Kona15
+          export KBUILD_BUILD_HOST=github-actions
+          make -j"$(nproc)" O=out LLVM=1 LLVM_IAS=1 HOSTCC=gcc PYTHON=python3 \
+            CC=clang LD=ld.lld AS=llvm-as AR=llvm-ar NM=llvm-nm \
+            OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip
+
+      - name: Collect artifacts
+        run: |
+          ls -la kernel/out/arch/arm64/boot/Image
+          mkdir -p pack
+          cp kernel/out/arch/arm64/boot/Image pack/Image
+          # dtb/dtbo: reusar os atuais do device (commitados em boot-assets)
+          cp "$GITHUB_WORKSPACE/droidspace/boot-assets/dtb" pack/dtb
+          cp "$GITHUB_WORKSPACE/droidspace/boot-assets/dtbo.img" pack/dtbo.img
+          ls -la pack/
+
+      - name: Package AnyKernel (Pulsar AK3)
+        run: |
+          mkdir -p ak
+          cp -r "$GITHUB_WORKSPACE/droidspace/anykernel/." ak/
+          cp pack/Image ak/Image
+          cp pack/dtb ak/dtb
+          cp pack/dtbo.img ak/dtbo.img
+          cd ak
+          ZIP="Kona515-${DEVICE}-boottest-$(date +%Y%m%d-%H%M).zip"
+          zip -r9 "$ZIP" . -x '*.git*'
+          mv "$ZIP" "$GITHUB_WORKSPACE/"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kona515-${{ env.DEVICE }}-boottest
+          path: Kona515-*.zip
+          if-no-files-found: error
+
+      - name: Create Release
+        working-directory: droidspace
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          ZIP="$(ls "$GITHUB_WORKSPACE"/Kona515-*.zip)"
+          RELEASE="kona515-boottest-$(date +%Y%m%d-%H%M)"
+          printf '**Kernel Experimental \xe2\x80\x94 kona_msm-5.15 (rofikkernel) SEM patches.**\n\n- Base: kona-msm-5.15 (5.15.104, drm/msm mainline, sem kgsl)\n- Config: gki_defconfig + vendor/kona_GKI.config + kona_consolidate.config\n- dtb/dtbo.img: atuais do device (boot-assets).\n\nFlash via TWRP/recovery. Objetivo: ver se o kernel boota (adb/dmesg/init).\n' > NOTES.md
+          gh release create "$RELEASE" "$ZIP" \
+            --title "kona 5.15 boot test (bare) — ${DEVICE} $(date +%Y%m%d-%H%M)" \
+            --notes-file NOTES.md
+          echo "Release: https://github.com/${{ github.repository }}/releases/tag/$RELEASE"
