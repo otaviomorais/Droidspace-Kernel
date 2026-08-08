@@ -64,6 +64,9 @@ jobs:
             out/.config \
             arch/arm64/configs/vendor/kona_GKI.config \
             arch/arm64/configs/vendor/kona_consolidate.config || true
+          # thin LTO + sem BTF p/ nao estourar RAM do runner (LTO full OOMs em 7GB)
+          ./scripts/config --file out/.config -e CONFIG_LTO_CLANG_THIN \
+            -d CONFIG_LTO_CLANG_FULL -d CONFIG_LTO_NONE -d CONFIG_DEBUG_INFO_BTF
           make O=out LLVM=1 LLVM_IAS=1 HOSTCC=gcc PYTHON=python3 olddefconfig
 
       - name: Build kernel
