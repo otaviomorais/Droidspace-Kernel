@@ -1,48 +1,75 @@
 From: Pulsar Bot <pulsar@localhost>
-Subject: [PATCH 1/2] seccomp: add SECCOMP_RET_USER_NOTIF + notify addfd
+Subject: [PATCH] seccomp: add SECCOMP_RET_USER_NOTIF + notify addfd
 
-Backport of seccomp user notification (SECCOMP_RET_USER_NOTIF) from
-Linux 5.0 and seccomp notify addfd (SECCOMP_IOCTL_NOTIF_ADDFD) from
-Linux 5.9, ported to the e404 4.19 CAF base.
+Backport of seccomp user notification (SECCOMP_RET_USER_NOTIF) and
+seccomp notify addfd (SECCOMP_IOCTL_NOTIF_ADDFD) from Linux 5.9,
+ported to the e404 4.19 CAF base.
 
 Adds:
   - SECCOMP_RET_USER_NOTIF action
-  - struct seccomp_knotif (in-kernel notification state)
+  - struct seccomp_knotif / seccomp_kaddfd / notification
   - seccomp_notify_* file ops for the supervisor fd
   - SECCOMP_IOCTL_NOTIF_RECV/SEND/ID_VALID/ADDFD ioctls
   - SECCOMP_FILTER_FLAG_NEW_LISTENER flag
+  - SECCOMP_GET_NOTIF_SIZES op
 
 Required: 0000-task-fd-install.patch must be applied first.
 
-NOTE: This patch adds SECCOMP_RET_USER_NOTIF infrastructure from
-scratch since the e404 base (4.19.404 staging-bpf) does not have it.
-The seccomp_filter struct is extended with notify_lock + knotif list.
+The seccomp_filter struct is extended with notif + notify_lock + wqh.
+FD installation on the supervised task uses task_fd_install() for
+explicit fds and get_unused_fd_flags()/fd_install() for allocation.
 
+Reconstructed and validated against e404 staging-bpf base.
+
+diff --git a/include/linux/seccomp.h b/include/linux/seccomp.h
+index e5320f6..30fe612 100644
+--- a/include/linux/seccomp.h
++++ b/include/linux/seccomp.h
+@@ -6,7 +6,11 @@
+ 
+ #define SECCOMP_FILTER_FLAG_MASK	(SECCOMP_FILTER_FLAG_TSYNC	| \
+ 					 SECCOMP_FILTER_FLAG_LOG	| \
+-					 SECCOMP_FILTER_FLAG_SPEC_ALLOW)
++					 SECCOMP_FILTER_FLAG_SPEC_ALLOW	|	\
++					 SECCOMP_FILTER_FLAG_NEW_LISTENER)
++
++#define SECCOMP_NOTIFY_ADDFD_SIZE_VER0	24
++#define SECCOMP_NOTIFY_ADDFD_SIZE_LATEST SECCOMP_NOTIFY_ADDFD_SIZE_VER0
+ 
+ #ifdef CONFIG_SECCOMP
+ 
+diff --git a/include/uapi/linux/seccomp.h b/include/uapi/linux/seccomp.h
+index 9efc0e7..a9b4cfc 100644
 --- a/include/uapi/linux/seccomp.h
 +++ b/include/uapi/linux/seccomp.h
-@@ -13,10 +13,11 @@
- /* Valid operations for seccomp syscall. */
+@@ -15,11 +15,13 @@
  #define SECCOMP_SET_MODE_STRICT		0
  #define SECCOMP_SET_MODE_FILTER		1
  #define SECCOMP_GET_ACTION_AVAIL	2
 +#define SECCOMP_GET_NOTIF_SIZES		3
  
  /* Valid flags for SECCOMP_SET_MODE_FILTER */
- #define SECCOMP_FILTER_FLAG_TSYNC		(1UL << 0)
- #define SECCOMP_FILTER_FLAG_LOG			(1UL << 1)
- #define SECCOMP_FILTER_FLAG_SPEC_ALLOW		(1UL << 2)
+-#define SECCOMP_FILTER_FLAG_TSYNC	(1UL << 0)
+-#define SECCOMP_FILTER_FLAG_LOG		(1UL << 1)
+-#define SECCOMP_FILTER_FLAG_SPEC_ALLOW	(1UL << 2)
++#define SECCOMP_FILTER_FLAG_TSYNC		(1UL << 0)
++#define SECCOMP_FILTER_FLAG_LOG			(1UL << 1)
++#define SECCOMP_FILTER_FLAG_SPEC_ALLOW		(1UL << 2)
 +#define SECCOMP_FILTER_FLAG_NEW_LISTENER	(1UL << 3)
  
-@@ -44,10 +45,55 @@
+ /*
+  * All BPF programs must return a 32-bit value.
+@@ -36,6 +38,7 @@
+ #define SECCOMP_RET_TRAP	 0x00030000U /* disallow and force a SIGSYS */
+ #define SECCOMP_RET_ERRNO	 0x00050000U /* returns an errno */
  #define SECCOMP_RET_TRACE	 0x7ff00000U /* pass to a tracer or disallow */
++#define SECCOMP_RET_USER_NOTIF	 0x7fc00000U /* notifies userspace */
  #define SECCOMP_RET_LOG		 0x7ffc0000U /* allow after logging */
  #define SECCOMP_RET_ALLOW	 0x7fff0000U /* allow */
-+#define SECCOMP_RET_USER_NOTIF	 0x7fc00000U /* notifies userspace */
  
- /* Masks for the return value sections. */
- #define SECCOMP_RET_ACTION_FULL	0xffff0000U
- #define SECCOMP_RET_ACTION	0x7fff0000U
- #define SECCOMP_RET_DATA	0x0000ffffU
+@@ -60,4 +63,50 @@ struct seccomp_data {
+ 	__u64 args[6];
+ };
  
 +struct seccomp_notif_sizes {
 +	__u16 seccomp_notif;
@@ -75,55 +102,62 @@ The seccomp_filter struct is extended with notify_lock + knotif list.
 +	__u32 newfd_flags;
 +};
 +
-+#define SECCOMP_ADDFD_FLAG_SETFD	(1UL << 0)
-+#define SECCOMP_ADDFD_FLAG_SEND		(1UL << 1)
++#define SECCOMP_ADDFD_FLAG_SETFD	(1UL << 0) /* Specify remote fd */
 +
 +#define SECCOMP_IOC_MAGIC		'!'
 +#define SECCOMP_IO(nr)			_IO(SECCOMP_IOC_MAGIC, nr)
++#define SECCOMP_IOR(nr, type)		_IOR(SECCOMP_IOC_MAGIC, nr, type)
 +#define SECCOMP_IOW(nr, type)		_IOW(SECCOMP_IOC_MAGIC, nr, type)
-+#define SECCOMP_IOCTL_NOTIF_RECV	SECCOMP_IOW(0, struct seccomp_notif)
-+#define SECCOMP_IOCTL_NOTIF_SEND	SECCOMP_IOW(1, struct seccomp_notif_resp)
++#define SECCOMP_IOWR(nr, type)		_IOWR(SECCOMP_IOC_MAGIC, nr, type)
++
++/* Flags for seccomp notification fd ioctl. */
++#define SECCOMP_IOCTL_NOTIF_RECV	SECCOMP_IOWR(0, struct seccomp_notif)
++#define SECCOMP_IOCTL_NOTIF_SEND	SECCOMP_IOWR(1, struct seccomp_notif_resp)
 +#define SECCOMP_IOCTL_NOTIF_ID_VALID	SECCOMP_IOW(2, __u64)
++/* On success, the return value is the remote process's added fd number */
 +#define SECCOMP_IOCTL_NOTIF_ADDFD	SECCOMP_IOW(3, struct seccomp_notif_addfd)
 +
---- a/include/linux/seccomp.h
-+++ b/include/linux/seccomp.h
-@@ -6,6 +6,7 @@
- #include <uapi/linux/seccomp.h>
- 
- #define SECCOMP_FILTER_FLAG_MASK	(SECCOMP_FILTER_FLAG_TSYNC	| \
- 					 SECCOMP_FILTER_FLAG_LOG	| \
--					 SECCOMP_FILTER_FLAG_SPEC_ALLOW)
-+					 SECCOMP_FILTER_FLAG_SPEC_ALLOW	| \
-+					 SECCOMP_FILTER_FLAG_NEW_LISTENER)
- 
+ #endif /* _UAPI_LINUX_SECCOMP_H */
+diff --git a/kernel/seccomp.c b/kernel/seccomp.c
+index b56f574..5fa02e6 100644
 --- a/kernel/seccomp.c
 +++ b/kernel/seccomp.c
-@@ -47,11 +47,35 @@
+@@ -31,6 +31,14 @@
+ /* Not exposed in headers: strictly internal use only. */
+ #define SECCOMP_MODE_DEAD	(SECCOMP_MODE_FILTER + 1)
+ 
++/*
++ * When SECCOMP_IOCTL_NOTIF_ID_VALID was first introduced, it had the
++ * wrong direction flag in the ioctl number. This is the broken one,
++ * which the kernel needs to keep supporting until all userspaces stop
++ * using the wrong command number.
++ */
++#define SECCOMP_IOCTL_NOTIF_ID_VALID_WRONG_DIR	SECCOMP_IOR(2, __u64)
++
+ #ifdef CONFIG_HAVE_ARCH_SECCOMP_FILTER
+ #include <asm/syscall.h>
+ #endif
+@@ -42,6 +50,16 @@
+ #include <linux/capability.h>
+ #include <linux/tracehook.h>
+ #include <linux/uaccess.h>
++#include <linux/anon_inodes.h>
++#include <linux/completion.h>
++#include <linux/file.h>
++#include <linux/ioctl.h>
++#include <linux/lockdep.h>
++#include <linux/mutex.h>
++#include <linux/poll.h>
++#include <linux/random.h>
++#include <linux/semaphore.h>
++#include <linux/wait.h>
+ 
+ /**
+  * struct seccomp_filter - container for seccomp BPF programs
+@@ -64,11 +82,105 @@
   * seccomp_filter objects should never be modified after being attached
   * to a task_struct (other than @usage).
   */
- struct seccomp_filter {
- 	refcount_t usage;
- 	bool log;
- 	struct seccomp_filter *prev;
- 	struct bpf_prog *prog;
-+	struct notification *notif;
-+	struct mutex notify_lock;
-+};
-+
-+/**
-+ * struct seccomp_knotif - kernel-internal seccomp notification state
-+ * @task: the task that triggered the notification
-+ * @id: unique notification id
-+ * @data: the seccomp_data for the syscall that triggered the notification
-+ * @state: state of this notification
-+ * @error: error from the supervisor (valid when state == SECCOMP_NOTIFY_REPLIED)
-+ * @val: return value from the supervisor
-+ * @flags: SECCOMP_USER_NOTIF_FLAG_* flags
-+ * @list: member in notification object's list
-+ * @wait: poll/wait for notification completion
-+ */
 +enum notify_state {
 +	SECCOMP_NOTIFY_INIT,
 +	SECCOMP_NOTIFY_SENT,
@@ -131,34 +165,111 @@ The seccomp_filter struct is extended with notify_lock + knotif list.
 +};
 +
 +struct seccomp_knotif {
++	/* The struct pid of the task whose filter triggered the notification */
 +	struct task_struct *task;
++
++	/* The "cookie" for this request; this is unique for this filter. */
 +	u64 id;
++
++	/*
++	 * The seccomp data. This pointer is valid the entire time this
++	 * notification is active, since it comes from __seccomp_filter which
++	 * eclipses the entire lifecycle here.
++	 */
 +	const struct seccomp_data *data;
++
++	/*
++	 * Notification states. When SECCOMP_RET_USER_NOTIF is returned, a
++	 * struct seccomp_knotif is created and starts out in INIT. Once the
++	 * handler reads the notification off of an FD, it transitions to SENT.
++	 * If a signal is received the state transitions back to INIT and
++	 * another message is sent. When the userspace handler replies, state
++	 * transitions to REPLIED.
++	 */
 +	enum notify_state state;
++
++	/* The return values, only valid when in SECCOMP_NOTIFY_REPLIED */
 +	int error;
 +	long val;
 +	u32 flags;
-+	struct list_head list;
++
++	/*
++	 * Signals when this has changed states, such as the listener
++	 * dying, a new seccomp addfd message, or changing to REPLIED
++	 */
 +	struct completion ready;
- };
- 
++
++	struct list_head list;
++
++	/* outstanding addfd requests */
++	struct list_head addfd;
++};
++
++/**
++ * struct seccomp_kaddfd - container for seccomp_addfd ioctl messages
++ *
++ * @file: A reference to the file to install in the other task
++ * @fd: The fd number to install it at. If the fd number is -1, it means the
++ *      installing process should allocate the fd as normal.
++ * @flags: The flags for the new file descriptor. At the moment, only O_CLOEXEC
++ *         is allowed.
++ * @ret: The return value of the installing process. It is set to the fd num
++ *       upon success (>= 0).
++ * @completion: Indicates that the installing process has completed fd
++ *              installation, or gone away (either due to successful
++ *              reply, or signal)
++ *
++ */
++struct seccomp_kaddfd {
++	struct file *file;
++	int fd;
++	unsigned int flags;
++
++	/* To only be set on reply */
++	int ret;
++	struct completion completion;
++	struct list_head list;
++};
++
++/**
++ * struct notification - container for seccomp userspace notifications. Since
++ * most seccomp filters will not have notification listeners attached and this
++ * structure is fairly large, we store the notification-specific stuff in a
++ * separate structure.
++ *
++ * @request: A semaphore that users of this notification can wait on for
++ *           changes. Actual reads and writes are still controlled with
++ *           filter->notify_lock.
++ * @next_id: The id of the next request.
++ * @notifications: A list of struct seccomp_knotif elements.
++ */
 +struct notification {
 +	struct semaphore request;
 +	u64 next_id;
 +	struct list_head notifications;
-+	wait_queue_head_t wqh;
 +};
 +
-@@ -55,6 +79,7 @@ struct seccomp_filter {
- /* Limit any path through the tree to 256KB worth of instructions. */
- #define MAX_INSNS_PER_PATH ((1 << 18) / sizeof(struct sock_filter))
+ struct seccomp_filter {
+ 	refcount_t usage;
+ 	bool log;
+ 	struct seccomp_filter *prev;
+ 	struct bpf_prog *prog;
++	struct notification *notif;
++	struct mutex notify_lock;
++	wait_queue_head_t wqh;
+ };
  
-+static atomic64_t notif_id = ATOMIC64_INIT(0);
- /*
-  * Endianness is explicitly ignored and left for BPF program authors to manage
-  * as per the specific architecture.
-@@ -505,6 +530,11 @@ static void __put_seccomp_filter(struct seccomp_filter *orig)
- 	while (orig) {
+ /* Limit any path through the tree to 256KB worth of instructions. */
+@@ -404,6 +516,7 @@ static struct seccomp_filter *seccomp_prepare_filter(struct sock_fprog *fprog)
+ 	}
+ 
+ 	refcount_set(&sfilter->usage, 1);
++	init_waitqueue_head(&sfilter->wqh);
+ 
+ 	return sfilter;
+ }
+@@ -516,6 +629,11 @@ static void __put_seccomp_filter(struct seccomp_filter *orig)
+ 	while (orig && refcount_dec_and_test(&orig->usage)) {
  		struct seccomp_filter *freeme = orig;
  		orig = orig->prev;
 +		if (freeme->notif) {
@@ -169,36 +280,53 @@ The seccomp_filter struct is extended with notify_lock + knotif list.
  		seccomp_filter_free(freeme);
  	}
  }
-@@ -660,6 +690,15 @@ static int __seccomp_filter(int this_syscall, const struct seccomp_data *sd,
- 	case SECCOMP_RET_ALLOW:
- 		return 0;
+@@ -657,12 +775,137 @@ void secure_computing_strict(int this_syscall)
+ #else
  
-+	case SECCOMP_RET_USER_NOTIF: {
-+		int err;
-+
-+		err = seccomp_do_user_notification(this_syscall, match, sd);
-+		if (err == 0)
-+			return 0;
-+		goto skip;
-+	}
-+
- 	case SECCOMP_RET_KILL_THREAD:
- 	case SECCOMP_RET_KILL_PROCESS:
- 	default:
-@@ -750,6 +789,283 @@ static long seccomp_get_metadata(struct task_struct *task,
- }
- #endif /* CONFIG_CHECKPOINT_RESTORE */
- 
+ #ifdef CONFIG_SECCOMP_FILTER
 +static u64 seccomp_next_notify_id(struct seccomp_filter *filter)
 +{
++	/*
++	 * Note: overflow is ok here, the id just needs to be unique per
++	 * filter.
++	 */
 +	lockdep_assert_held(&filter->notify_lock);
 +	return filter->notif->next_id++;
 +}
 +
-+static void seccomp_do_user_notification_complete(struct seccomp_knotif *n)
++static void seccomp_handle_addfd(struct seccomp_kaddfd *addfd)
 +{
-+	n->state = SECCOMP_NOTIFY_REPLIED;
-+	complete(&n->ready);
++	/*
++	 * Remove the notification, and reset the list pointers, indicating
++	 * that it has been handled.
++	 */
++	list_del_init(&addfd->list);
++
++	/*
++	 * Install the fd in the target task. An explicit fd number was
++	 * requested when the SETFD flag is used, otherwise a new fd is
++	 * allocated.
++	 */
++	if (addfd->fd < 0) {
++		int fd = get_unused_fd_flags(addfd->flags);
++
++		if (fd >= 0) {
++			fd_install(fd, get_file(addfd->file));
++			addfd->ret = fd;
++		} else {
++			addfd->ret = fd;
++		}
++	} else {
++		int ret;
++
++		get_file(addfd->file);
++		ret = task_fd_install(current, addfd->fd,
++				      addfd->file, addfd->flags);
++		if (ret)
++			fput(addfd->file);
++		addfd->ret = ret ? ret : addfd->fd;
++	}
++	complete(&addfd->completion);
 +}
 +
 +static int seccomp_do_user_notification(int this_syscall,
@@ -206,11 +334,13 @@ The seccomp_filter struct is extended with notify_lock + knotif list.
 +					const struct seccomp_data *sd)
 +{
 +	int err;
++	u32 flags = 0;
 +	long ret = 0;
 +	struct seccomp_knotif n = {};
++	struct seccomp_kaddfd *addfd, *tmp;
 +
 +	mutex_lock(&match->notify_lock);
-+	err = -ENOENT;
++	err = -ENOSYS;
 +	if (!match->notif)
 +		goto out;
 +
@@ -220,53 +350,163 @@ The seccomp_filter struct is extended with notify_lock + knotif list.
 +	n.id = seccomp_next_notify_id(match);
 +	init_completion(&n.ready);
 +	list_add(&n.list, &match->notif->notifications);
++	INIT_LIST_HEAD(&n.addfd);
 +
 +	up(&match->notif->request);
-+	wake_up_poll(&match->notif->wqh, EPOLLIN | EPOLLRDNORM);
++	wake_up_poll(&match->wqh, EPOLLIN | EPOLLRDNORM);
 +	mutex_unlock(&match->notify_lock);
 +
++	/*
++	 * This is where we wait for a reply from userspace.
++	 */
++wait:
 +	err = wait_for_completion_interruptible(&n.ready);
-+
 +	mutex_lock(&match->notify_lock);
-+	if (err != 0) {
-+		/* we were interrupted, remove from list */
++	if (err == 0) {
++		/* Check if we were woken up by a addfd message */
++		addfd = list_first_entry_or_null(&n.addfd,
++						 struct seccomp_kaddfd, list);
++		if (addfd && n.state != SECCOMP_NOTIFY_REPLIED) {
++			seccomp_handle_addfd(addfd);
++			mutex_unlock(&match->notify_lock);
++			goto wait;
++		}
++		ret = n.val;
++		err = n.error;
++		flags = n.flags;
++	}
++
++	/* If there were any pending addfd calls, clear them out */
++	list_for_each_entry_safe(addfd, tmp, &n.addfd, list) {
++		/* The process went away before we got a chance to handle it */
++		addfd->ret = -ESRCH;
++		list_del_init(&addfd->list);
++		complete(&addfd->completion);
++	}
++
++	/*
++	 * Note that it's possible the listener died in between the time when
++	 * we were notified of a response (or a signal) and when we were able
++	 * to re-acquire the lock, so only delete from the list if the
++	 * notification actually exists.
++	 *
++	 * Also note that this test is only valid because there's no way to
++	 * *reattach* to a notifier right now. If one is added, we'll need to
++	 * keep track of the notif itself and make sure they match here.
++	 */
++	if (match->notif)
 +		list_del(&n.list);
-+		goto out;
-+	}
-+
-+	if (n.flags & SECCOMP_USER_NOTIF_FLAG_CONTINUE) {
-+		err = 0;
-+		goto remove_and_out;
-+	}
-+
-+	err = n.error;
-+	ret = n.val;
-+
-+remove_and_out:
-+	list_del(&n.list);
 +out:
 +	mutex_unlock(&match->notify_lock);
-+	if (err < 0) {
-+		syscall_set_return_value(current, task_pt_regs(current),
-+					 err, 0);
-+		return -1;
-+	}
-+	if (ret == 0 && (n.flags & SECCOMP_USER_NOTIF_FLAG_CONTINUE))
++
++	/* Userspace requests to continue the syscall. */
++	if (flags & SECCOMP_USER_NOTIF_FLAG_CONTINUE)
 +		return 0;
-+	syscall_set_return_value(current, task_pt_regs(current), 0, ret);
++
++	syscall_set_return_value(current, task_pt_regs(current),
++				 err, ret);
 +	return -1;
 +}
 +
-+static struct seccomp_knotif *find_notification(struct seccomp_filter *filter,
-+						 u64 id)
+ static int __seccomp_filter(int this_syscall, const struct seccomp_data *sd,
+ 			    const bool recheck_after_trace)
+ {
+ 	u32 filter_ret, action;
+ 	struct seccomp_filter *match = NULL;
+ 	int data;
++	struct seccomp_data sd_local;
+ 
+ 	/*
+ 	 * Make sure that any changes to mode from another thread have
+@@ -670,6 +913,11 @@ static int __seccomp_filter(int this_syscall, const struct seccomp_data *sd,
+ 	 */
+ 	rmb();
+ 
++	if (!sd) {
++		populate_seccomp_data(&sd_local);
++		sd = &sd_local;
++	}
++
+ 	filter_ret = seccomp_run_filters(sd, &match);
+ 	data = filter_ret & SECCOMP_RET_DATA;
+ 	action = filter_ret & SECCOMP_RET_ACTION_FULL;
+@@ -737,6 +985,11 @@ static int __seccomp_filter(int this_syscall, const struct seccomp_data *sd,
+ 		seccomp_log(this_syscall, 0, action, true);
+ 		return 0;
+ 
++	case SECCOMP_RET_USER_NOTIF:
++		if (seccomp_do_user_notification(this_syscall, match, sd))
++			goto skip;
++		return 0;
++
+ 	case SECCOMP_RET_ALLOW:
+ 		/*
+ 		 * Note that the "match" filter will always be NULL for
+@@ -847,6 +1100,400 @@ static long seccomp_set_mode_strict(void)
+ }
+ 
+ #ifdef CONFIG_SECCOMP_FILTER
++static void seccomp_notify_free(struct seccomp_filter *filter)
++{
++	kfree(filter->notif);
++	filter->notif = NULL;
++}
++
++static void seccomp_notify_detach(struct seccomp_filter *filter)
++{
++	struct seccomp_knotif *knotif;
++
++	if (!filter || !filter->notif)
++		return;
++
++	mutex_lock(&filter->notify_lock);
++
++	/*
++	 * If this file is being closed because e.g. the task who owned it
++	 * died, let's wake everyone up who was waiting on us.
++	 */
++	list_for_each_entry(knotif, &filter->notif->notifications, list) {
++		if (knotif->state == SECCOMP_NOTIFY_REPLIED)
++			continue;
++
++		knotif->state = SECCOMP_NOTIFY_REPLIED;
++		knotif->error = -ENOSYS;
++		knotif->val = 0;
++
++		/*
++		 * We do not need to wake up any pending addfd messages, as
++		 * the notifier will do that for us, as this just looks
++		 * like a standard reply.
++		 */
++		complete(&knotif->ready);
++	}
++
++	seccomp_notify_free(filter);
++	mutex_unlock(&filter->notify_lock);
++}
++
++static int seccomp_notify_release(struct inode *inode, struct file *file)
++{
++	struct seccomp_filter *filter = file->private_data;
++
++	seccomp_notify_detach(filter);
++	__put_seccomp_filter(filter);
++	return 0;
++}
++
++/* must be called with notif_lock held */
++static inline struct seccomp_knotif *
++find_notification(struct seccomp_filter *filter, u64 id)
 +{
 +	struct seccomp_knotif *cur;
 +
 +	lockdep_assert_held(&filter->notify_lock);
++
 +	list_for_each_entry(cur, &filter->notif->notifications, list) {
 +		if (cur->id == id)
 +			return cur;
 +	}
++
 +	return NULL;
 +}
 +
@@ -277,10 +517,17 @@ The seccomp_filter struct is extended with notify_lock + knotif list.
 +	struct seccomp_notif unotif;
 +	ssize_t ret;
 +
++	/* Verify that we're not given garbage to keep struct extensible. */
++	ret = check_zeroed_user(buf, sizeof(unotif));
++	if (ret < 0)
++		return ret;
++	if (!ret)
++		return -EINVAL;
++
 +	memset(&unotif, 0, sizeof(unotif));
 +
 +	ret = down_interruptible(&filter->notif->request);
-+	if (ret != 0)
++	if (ret < 0)
 +		return ret;
 +
 +	mutex_lock(&filter->notify_lock);
@@ -291,6 +538,11 @@ The seccomp_filter struct is extended with notify_lock + knotif list.
 +		}
 +	}
 +
++	/*
++	 * If we didn't find a notification, it could be that the task was
++	 * interrupted by a fatal signal between the time we were woken and
++	 * when we were able to acquire the rw lock.
++	 */
 +	if (!knotif) {
 +		ret = -ENOENT;
 +		goto out;
@@ -301,14 +553,27 @@ The seccomp_filter struct is extended with notify_lock + knotif list.
 +	unotif.data = *(knotif->data);
 +
 +	knotif->state = SECCOMP_NOTIFY_SENT;
-+	wake_up_poll(&filter->notif->wqh, EPOLLOUT | EPOLLWRNORM);
++	wake_up_poll(&filter->wqh, EPOLLOUT | EPOLLWRNORM);
 +	ret = 0;
 +out:
 +	mutex_unlock(&filter->notify_lock);
 +
-+	if (ret == 0) {
-+		if (copy_to_user(buf, &unotif, sizeof(unotif)))
-+			ret = -EFAULT;
++	if (ret == 0 && copy_to_user(buf, &unotif, sizeof(unotif))) {
++		ret = -EFAULT;
++
++		/*
++		 * Userspace screwed up. To make sure that we keep this
++		 * notification alive, let's reset it back to INIT. It
++		 * may have died when we released the lock, so we need to make
++		 * sure it's still around.
++		 */
++		mutex_lock(&filter->notify_lock);
++		knotif = find_notification(filter, unotif.id);
++		if (knotif) {
++			knotif->state = SECCOMP_NOTIFY_INIT;
++			up(&filter->notif->request);
++		}
++		mutex_unlock(&filter->notify_lock);
 +	}
 +
 +	return ret;
@@ -341,15 +606,18 @@ The seccomp_filter struct is extended with notify_lock + knotif list.
 +		goto out;
 +	}
 +
++	/* Allow exactly one reply. */
 +	if (knotif->state != SECCOMP_NOTIFY_SENT) {
 +		ret = -EINPROGRESS;
 +		goto out;
 +	}
 +
++	ret = 0;
++	knotif->state = SECCOMP_NOTIFY_REPLIED;
 +	knotif->error = resp.error;
 +	knotif->val = resp.val;
 +	knotif->flags = resp.flags;
-+	seccomp_do_user_notification_complete(knotif);
++	complete(&knotif->ready);
 +out:
 +	mutex_unlock(&filter->notify_lock);
 +	return ret;
@@ -370,46 +638,55 @@ The seccomp_filter struct is extended with notify_lock + knotif list.
 +		return ret;
 +
 +	knotif = find_notification(filter, id);
-+	if (knotif) {
-+		if (knotif->state == SECCOMP_NOTIFY_SENT)
-+			ret = 0;
-+		else
-+			ret = -EBUSY;
-+	} else {
++	if (knotif && knotif->state == SECCOMP_NOTIFY_SENT)
++		ret = 0;
++	else
 +		ret = -ENOENT;
-+	}
 +
 +	mutex_unlock(&filter->notify_lock);
 +	return ret;
 +}
 +
 +static long seccomp_notify_addfd(struct seccomp_filter *filter,
-+				 void __user *buf)
++				 struct seccomp_notif_addfd __user *uaddfd,
++				 unsigned int size)
 +{
 +	struct seccomp_notif_addfd addfd;
 +	struct seccomp_knotif *knotif;
-+	struct file *file;
-+	int newfd;
-+	long ret;
++	struct seccomp_kaddfd kaddfd;
++	int ret;
 +
-+	if (copy_from_user(&addfd, buf, sizeof(addfd)))
-+		return -EFAULT;
++	BUILD_BUG_ON(sizeof(addfd) < SECCOMP_NOTIFY_ADDFD_SIZE_VER0);
++	BUILD_BUG_ON(sizeof(addfd) != SECCOMP_NOTIFY_ADDFD_SIZE_LATEST);
 +
-+	if (addfd.flags & ~(SECCOMP_ADDFD_FLAG_SETFD | SECCOMP_ADDFD_FLAG_SEND))
++	if (size < SECCOMP_NOTIFY_ADDFD_SIZE_VER0 || size >= PAGE_SIZE)
 +		return -EINVAL;
++
++	ret = copy_struct_from_user(&addfd, sizeof(addfd), uaddfd, size);
++	if (ret)
++		return ret;
 +
 +	if (addfd.newfd_flags & ~O_CLOEXEC)
 +		return -EINVAL;
 +
-+	file = fget(addfd.srcfd);
-+	if (!file)
++	if (addfd.flags & ~SECCOMP_ADDFD_FLAG_SETFD)
++		return -EINVAL;
++
++	if (addfd.newfd && !(addfd.flags & SECCOMP_ADDFD_FLAG_SETFD))
++		return -EINVAL;
++
++	kaddfd.file = fget(addfd.srcfd);
++	if (!kaddfd.file)
 +		return -EBADF;
 +
++	kaddfd.flags = addfd.newfd_flags;
++	kaddfd.fd = (addfd.flags & SECCOMP_ADDFD_FLAG_SETFD) ?
++		    addfd.newfd : -1;
++	init_completion(&kaddfd.completion);
++
 +	ret = mutex_lock_interruptible(&filter->notify_lock);
-+	if (ret < 0) {
-+		fput(file);
-+		return ret;
-+	}
++	if (ret < 0)
++		goto out;
 +
 +	knotif = find_notification(filter, addfd.id);
 +	if (!knotif) {
@@ -417,34 +694,52 @@ The seccomp_filter struct is extended with notify_lock + knotif list.
 +		goto out_unlock;
 +	}
 +
++	/*
++	 * We do not want to allow for FD injection to occur before the
++	 * notification has been picked up by a userspace handler, or after
++	 * the notification has been replied to.
++	 */
 +	if (knotif->state != SECCOMP_NOTIFY_SENT) {
 +		ret = -EINPROGRESS;
 +		goto out_unlock;
 +	}
 +
-+	if (addfd.flags & SECCOMP_ADDFD_FLAG_SETFD)
-+		newfd = addfd.newfd;
++	list_add(&kaddfd.list, &knotif->addfd);
++	complete(&knotif->ready);
++	mutex_unlock(&filter->notify_lock);
++
++	/* Now we wait for it to be processed or be interrupted */
++	ret = wait_for_completion_interruptible(&kaddfd.completion);
++	if (ret == 0) {
++		/*
++		 * We had a successful completion. The other side has already
++		 * removed us from the addfd queue, and
++		 * wait_for_completion_interruptible has a memory barrier upon
++		 * success that lets us read this value directly without
++		 * locking.
++		 */
++		ret = kaddfd.ret;
++		goto out;
++	}
++
++	mutex_lock(&filter->notify_lock);
++	/*
++	 * Even though we were woken up by a signal and not a successful
++	 * completion, a completion may have happened in the mean time.
++	 *
++	 * We need to check again if the addfd request has been handled,
++	 * and if not, we will remove it from the queue.
++	 */
++	if (list_empty(&kaddfd.list))
++		ret = kaddfd.ret;
 +	else
-+		newfd = get_unused_fd_flags(addfd.newfd_flags);
-+
-+	if (newfd < 0) {
-+		ret = newfd;
-+		goto out_unlock;
-+	}
-+
-+	get_file(file);
-+	ret = task_fd_install(knotif->task, newfd, file,
-+			      (addfd.newfd_flags & O_CLOEXEC) ? O_CLOEXEC : 0);
-+	if (ret < 0) {
-+		if (!(addfd.flags & SECCOMP_ADDFD_FLAG_SETFD))
-+			put_unused_fd(newfd);
-+	} else {
-+		ret = newfd;
-+	}
++		list_del(&kaddfd.list);
 +
 +out_unlock:
 +	mutex_unlock(&filter->notify_lock);
-+	fput(file);
++out:
++	fput(kaddfd.file);
++
 +	return ret;
 +}
 +
@@ -454,18 +749,25 @@ The seccomp_filter struct is extended with notify_lock + knotif list.
 +	struct seccomp_filter *filter = file->private_data;
 +	void __user *buf = (void __user *)arg;
 +
++	/* Fixed-size ioctls */
 +	switch (cmd) {
 +	case SECCOMP_IOCTL_NOTIF_RECV:
 +		return seccomp_notify_recv(filter, buf);
 +	case SECCOMP_IOCTL_NOTIF_SEND:
 +		return seccomp_notify_send(filter, buf);
++	case SECCOMP_IOCTL_NOTIF_ID_VALID_WRONG_DIR:
 +	case SECCOMP_IOCTL_NOTIF_ID_VALID:
 +		return seccomp_notify_id_valid(filter, buf);
-+	case SECCOMP_IOCTL_NOTIF_ADDFD:
-+		return seccomp_notify_addfd(filter, buf);
 +	}
 +
-+	return -EINVAL;
++	/* Extensible Argument ioctls */
++#define EA_IOCTL(cmd)	((cmd) & ~(IOC_INOUT | IOCSIZE_MASK))
++	switch (EA_IOCTL(cmd)) {
++	case EA_IOCTL(SECCOMP_IOCTL_NOTIF_ADDFD):
++		return seccomp_notify_addfd(filter, buf, _IOC_SIZE(cmd));
++	default:
++		return -EINVAL;
++	}
 +}
 +
 +static __poll_t seccomp_notify_poll(struct file *file,
@@ -475,7 +777,7 @@ The seccomp_filter struct is extended with notify_lock + knotif list.
 +	__poll_t ret = 0;
 +	struct seccomp_knotif *cur;
 +
-+	poll_wait(file, &filter->notif->wqh, poll_tab);
++	poll_wait(file, &filter->wqh, poll_tab);
 +
 +	if (mutex_lock_interruptible(&filter->notify_lock) < 0)
 +		return EPOLLERR;
@@ -491,136 +793,152 @@ The seccomp_filter struct is extended with notify_lock + knotif list.
 +
 +	mutex_unlock(&filter->notify_lock);
 +
++	if (refcount_read(&filter->usage) == 0)
++		ret |= EPOLLHUP;
++
 +	return ret;
 +}
 +
-+static int seccomp_notify_release(struct inode *inode, struct file *file)
-+{
-+	struct seccomp_filter *filter = file->private_data;
-+	struct seccomp_knotif *knotif;
-+
-+	if (!filter)
-+		return 0;
-+
-+	mutex_lock(&filter->notify_lock);
-+
-+	/* wake up all waiting tasks */
-+	list_for_each_entry(knotif, &filter->notif->notifications, list) {
-+		if (knotif->state == SECCOMP_NOTIFY_INIT ||
-+		    knotif->state == SECCOMP_NOTIFY_SENT) {
-+			knotif->state = SECCOMP_NOTIFY_REPLIED;
-+			knotif->error = -ENOENT;
-+			knotif->val = 0;
-+			complete(&knotif->ready);
-+		}
-+	}
-+
-+	kfree(filter->notif);
-+	filter->notif = NULL;
-+	mutex_unlock(&filter->notify_lock);
-+	__put_seccomp_filter(filter);
-+	return 0;
-+}
-+
 +static const struct file_operations seccomp_notify_ops = {
-+	.poll		= seccomp_notify_poll,
-+	.unlocked_ioctl	= seccomp_notify_ioctl,
-+	.release	= seccomp_notify_release,
++	.poll = seccomp_notify_poll,
++	.release = seccomp_notify_release,
++	.unlocked_ioctl = seccomp_notify_ioctl,
++	.compat_ioctl = seccomp_notify_ioctl,
 +};
 +
 +static struct file *init_listener(struct seccomp_filter *filter)
 +{
-+	struct file *ret;
-+	struct notification *notif;
++	struct file *ret = ERR_PTR(-EBUSY);
++	struct seccomp_filter *cur;
 +
-+	notif = kzalloc(sizeof(*notif), GFP_KERNEL);
-+	if (!notif)
-+		return ERR_PTR(-ENOMEM);
++	for (cur = current->seccomp.filter; cur; cur = cur->prev) {
++		if (cur->notif)
++			goto out;
++	}
 +
-+	sema_init(&notif->request, 0);
-+	notif->next_id = atomic64_inc_return(&notif_id);
-+	INIT_LIST_HEAD(&notif->notifications);
-+	init_waitqueue_head(&notif->wqh);
-+
-+	mutex_lock(&filter->notify_lock);
-+	ret = ERR_PTR(-EBUSY);
-+	if (filter->notif)
++	ret = ERR_PTR(-ENOMEM);
++	filter->notif = kzalloc(sizeof(*(filter->notif)), GFP_KERNEL);
++	if (!filter->notif)
 +		goto out;
-+	filter->notif = notif;
-+	notif = NULL;
++
++	sema_init(&filter->notif->request, 0);
++	filter->notif->next_id = get_random_u64();
++	INIT_LIST_HEAD(&filter->notif->notifications);
++
 +	ret = anon_inode_getfile("seccomp notify", &seccomp_notify_ops,
 +				 filter, O_RDWR);
 +	if (IS_ERR(ret))
-+		goto out;
-+	refcount_inc(&filter->usage);
++		goto out_notif;
++
++	/* The file has a reference to it now */
++	__get_seccomp_filter(filter);
++
++out_notif:
++	if (IS_ERR(ret))
++		seccomp_notify_free(filter);
 +out:
-+	mutex_unlock(&filter->notify_lock);
-+	kfree(notif);
 +	return ret;
 +}
 +
-@@ -851,6 +1143,7 @@ static long seccomp_set_mode_filter(unsigned int flags,
- {
+ /**
+  * seccomp_set_mode_filter: internal function for setting seccomp filter
+  * @flags:  flags to change filter behavior
+@@ -866,6 +1513,8 @@ static long seccomp_set_mode_filter(unsigned int flags,
  	const unsigned long seccomp_mode = SECCOMP_MODE_FILTER;
  	struct seccomp_filter *prepared = NULL;
-+	struct file *listener = NULL;
  	long ret = -EINVAL;
++	int listener = -1;
++	struct file *listener_f = NULL;
  
  	/* Validate flags. */
-@@ -858,6 +1151,9 @@ static long seccomp_set_mode_filter(unsigned int flags,
  	if (flags & ~SECCOMP_FILTER_FLAG_MASK)
- 		goto out;
- 
-+	if ((flags & SECCOMP_FILTER_FLAG_NEW_LISTENER) &&
-+	    (flags & SECCOMP_FILTER_FLAG_TSYNC))
-+		goto out;
-+
- 	/* Prepare the new filter before holding any locks. */
- 	prepared = seccomp_prepare_user_filter(ufilter);
- 	if (IS_ERR(prepared)) {
-@@ -865,6 +1161,12 @@ static long seccomp_set_mode_filter(unsigned int flags,
- 		goto out;
- 	}
+@@ -876,13 +1525,28 @@ static long seccomp_set_mode_filter(unsigned int flags,
+ 	if (IS_ERR(prepared))
+ 		return PTR_ERR(prepared);
  
 +	if (flags & SECCOMP_FILTER_FLAG_NEW_LISTENER) {
-+		prepared->notif = NULL;
-+		mutex_init(&prepared->notify_lock);
-+	}
++		listener = get_unused_fd_flags(O_CLOEXEC);
++		if (listener < 0) {
++			ret = listener;
++			goto out_free;
++		}
 +
- 	/*
- 	 * Make sure we cannot change seccomp or undo the push of a filter once
- 	 * we are in a multi-threaded environment.
-@@ -893,8 +1195,22 @@ static long seccomp_set_mode_filter(unsigned int flags,
- 	ret = seccomp_set_mode(current, seccomp_mode, prepared);
- 	if (ret)
- 		goto out_put_fd;
- 
-+	if (flags & SECCOMP_FILTER_FLAG_NEW_LISTENER) {
-+		listener = init_listener(prepared);
-+		if (IS_ERR(listener)) {
-+			ret = PTR_ERR(listener);
-+			listener = NULL;
-+			goto out_put_fd;
++		listener_f = init_listener(prepared);
++		if (IS_ERR(listener_f)) {
++			put_unused_fd(listener);
++			ret = PTR_ERR(listener_f);
++			goto out_free;
 +		}
 +	}
 +
- out_put_fd:
-+	if (listener) {
-+		if (ret == 0)
-+			fd_install(listener_f_put_unused, listener);
-+		else
-+			fput(listener);
-+	}
- 	if (flags & SECCOMP_FILTER_FLAG_TSYNC)
- 		put_unused_fd(listener_f_put_unused);
- out_put_fd_skip:
-@@ -940,6 +1256,9 @@ static long do_seccomp(unsigned int op, unsigned int flags,
- 	case SECCOMP_GET_ACTION_AVAIL:
- 		return seccomp_get_action_avail(uargs);
+ 	/*
+ 	 * Make sure we cannot change seccomp or nnp state via TSYNC
+ 	 * while another thread is in the middle of calling exec.
+ 	 */
+ 	if (flags & SECCOMP_FILTER_FLAG_TSYNC &&
+ 	    mutex_lock_killable(&current->signal->cred_guard_mutex))
+-		goto out_free;
++		goto out_put_fd;
  
-+	case SECCOMP_GET_NOTIF_SIZES:
-+		return seccomp_get_notif_sizes(uargs);
+ 	spin_lock_irq(&current->sighand->siglock);
+ 
+@@ -900,6 +1564,18 @@ static long seccomp_set_mode_filter(unsigned int flags,
+ 	spin_unlock_irq(&current->sighand->siglock);
+ 	if (flags & SECCOMP_FILTER_FLAG_TSYNC)
+ 		mutex_unlock(&current->signal->cred_guard_mutex);
++out_put_fd:
++	if (flags & SECCOMP_FILTER_FLAG_NEW_LISTENER) {
++		if (ret) {
++			listener_f->private_data = NULL;
++			fput(listener_f);
++			put_unused_fd(listener);
++			seccomp_notify_detach(prepared);
++		} else {
++			fd_install(listener, listener_f);
++			ret = listener;
++		}
++	}
+ out_free:
+ 	seccomp_filter_free(prepared);
+ 	return ret;
+@@ -924,6 +1600,7 @@ static long seccomp_get_action_avail(const char __user *uaction)
+ 	case SECCOMP_RET_KILL_THREAD:
+ 	case SECCOMP_RET_TRAP:
+ 	case SECCOMP_RET_ERRNO:
++	case SECCOMP_RET_USER_NOTIF:
+ 	case SECCOMP_RET_TRACE:
+ 	case SECCOMP_RET_LOG:
+ 	case SECCOMP_RET_ALLOW:
+@@ -935,6 +1612,20 @@ static long seccomp_get_action_avail(const char __user *uaction)
+ 	return 0;
+ }
+ 
++static long seccomp_get_notif_sizes(void __user *usizes)
++{
++	struct seccomp_notif_sizes sizes = {
++		.seccomp_notif = sizeof(struct seccomp_notif),
++		.seccomp_notif_resp = sizeof(struct seccomp_notif_resp),
++		.seccomp_data = sizeof(struct seccomp_data),
++	};
 +
++	if (copy_to_user(usizes, &sizes, sizeof(sizes)))
++		return -EFAULT;
++
++	return 0;
++}
++
+ /* Common entry point for both prctl and syscall. */
+ static long do_seccomp(unsigned int op, unsigned int flags,
+ 		       const char __user *uargs)
+@@ -951,6 +1642,11 @@ static long do_seccomp(unsigned int op, unsigned int flags,
+ 			return -EINVAL;
+ 
+ 		return seccomp_get_action_avail(uargs);
++	case SECCOMP_GET_NOTIF_SIZES:
++		if (flags != 0)
++			return -EINVAL;
++
++		return seccomp_get_notif_sizes(uargs);
  	default:
  		return -EINVAL;
  	}
